@@ -68,3 +68,40 @@ Backend/
 | GET | `/api/v1/auth/profile` | Get current user profile | Yes |
 | GET | `/api/v1/transactions` | List all transactions | Yes |
 | POST | `/api/v1/transactions` | Create new transaction | Yes |
+
+---
+
+## 🧪 Development / Quality Checks
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Run linting
+
+```bash
+npm run lint
+```
+
+**ESLint** performs static analysis on the source code to catch bugs, enforce consistent style, and flag potential issues before they reach runtime. The configuration lives in [`eslint.config.js`](./eslint.config.js) and targets all files under `src/`.
+
+### Run tests
+
+```bash
+npm test
+```
+
+**Jest** is the test runner. Tests live in the `tests/` directory and follow the `*.test.js` naming convention.
+
+**Supertest** is used alongside Jest to make real HTTP requests against the Express app without starting a live server. It imports `src/app.js` directly, keeping tests fast and self-contained.
+
+### Test structure
+
+```text
+tests/
+└── health.test.js   # Integration test for GET /api/v1/health
+```
+
+> **Note:** Because the project uses ES Modules (`"type": "module"`), Jest is run with the `--experimental-vm-modules` flag automatically via the `npm test` script. No Babel configuration is needed.
