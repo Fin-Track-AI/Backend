@@ -26,7 +26,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -70,7 +70,6 @@ jobs:
           flags: '--allow-unauthenticated'
           env_vars: |
             NODE_ENV=production
-            PORT=8080
             CLIENT_URL=${{ secrets.CLIENT_URL }}
           secrets: |
             MONGO_URI=MONGO_URI:latest
