@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+.git/
+.github/
+tests/
+test/
+coverage/
+*.log
+.DS_Store
+Readme.md
+eslint.config.js
