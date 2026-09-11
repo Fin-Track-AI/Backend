@@ -1,13 +1,20 @@
-/**
- * Database connection setup placeholder (e.g. MongoDB/Mongoose, PostgreSQL/Prisma, etc.)
- */
+import mongoose from 'mongoose';
+import { config } from './env.js';
+
 export const connectDB = async () => {
+  if (!config.mongoUri) {
+    console.log('[DB Warning] MONGO_URI is not defined in environment settings.');
+    return;
+  }
+
   try {
-    // Example MongoDB connection:
-    // await mongoose.connect(config.mongoUri);
-    console.log('[DB] Database connection placeholder initialized.');
+    const conn = await mongoose.connect(config.mongoUri);
+    console.log(`[DB] MongoDB Atlas connected successfully: ${conn.connection.host}`);
   } catch (error) {
-    console.error('[DB Error] Failed to connect to database:', error.message);
-    process.exit(1);
+    console.error(`[DB Error] Failed to connect to MongoDB: ${error.message}`);
+    // Non-fatal fallback for test environments without network access
+    if (process.env.NODE_ENV !== 'test') {
+      process.exit(1);
+    }
   }
 };

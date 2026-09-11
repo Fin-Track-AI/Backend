@@ -1,10 +1,11 @@
 import { ApiResponse } from '../utils/apiResponse.js';
+import { UserService } from '../services/user.service.js';
 
 export const register = async (req, res, next) => {
   try {
-    const { email, password, name } = req.body;
-    // Logic for user registration
-    return ApiResponse.success(res, 'User registered successfully', { user: { email, name } }, 201);
+    const { phone, email, name } = req.body;
+    const result = await UserService.loginOrRegisterUser({ phone, email, name });
+    return ApiResponse.success(res, 'User registered successfully', result, 201);
   } catch (error) {
     next(error);
   }
@@ -12,12 +13,9 @@ export const register = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    // Logic for user authentication
-    return ApiResponse.success(res, 'User logged in successfully', {
-      token: 'mock_jwt_token_xyz123',
-      user: { email, name: 'Sample User' },
-    });
+    const { phone, email, name } = req.body;
+    const result = await UserService.loginOrRegisterUser({ phone, email, name });
+    return ApiResponse.success(res, 'User logged in & saved successfully', result);
   } catch (error) {
     next(error);
   }
@@ -25,7 +23,9 @@ export const login = async (req, res, next) => {
 
 export const getProfile = async (req, res, next) => {
   try {
-    return ApiResponse.success(res, 'Profile retrieved successfully', { user: req.user });
+    const phone = req.user?.phone || req.headers['x-user-phone'] || '9876543210';
+    const user = await UserService.getUserByPhone(phone);
+    return ApiResponse.success(res, 'Profile retrieved successfully', { user: user || req.user });
   } catch (error) {
     next(error);
   }

@@ -7,6 +7,8 @@ import consentRoutes from './consent.routes.js';
 import upiRoutes from './upi.routes.js';
 import billsRoutes from './bills.routes.js';
 import aiRoutes from './ai.routes.js';
+import ocrRoutes from './ocr.routes.js';
+import claimRoutes from './claim.routes.js';
 
 const router = Router();
 
@@ -18,5 +20,7 @@ router.use('/consent', consentRoutes);
 router.use('/upi', upiRoutes);
 router.use('/bills', billsRoutes);
 router.use('/ai', aiRoutes);
+router.use('/ocr', ocrRoutes);
+router.use('/claims', claimRoutes);
 
 export default router;
