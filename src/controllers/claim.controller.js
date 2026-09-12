@@ -3,7 +3,7 @@ import { ApiResponse } from '../utils/apiResponse.js';
 
 export const submitClaim = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { title, amount, category, project, costCenter, billId } = req.body;
 
     const claimRecord = await claimService.submitClaim(userId, {
@@ -26,7 +26,7 @@ export const submitClaim = async (req, res, next) => {
 
 export const getMyClaims = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const claims = await claimService.getUserClaims(userId);
     return ApiResponse.success(res, 'User claims retrieved successfully', { claims });
   } catch (error) {
@@ -36,7 +36,7 @@ export const getMyClaims = async (req, res, next) => {
 
 export const getClaimDetails = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { claimId } = req.params;
 
     const claimRecord = await claimService.getClaimById(claimId, userId);

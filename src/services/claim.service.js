@@ -1,11 +1,6 @@
+import { ClaimModel } from '../models/claim.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
-
-/**
- * In-memory claim store.
- * Key: claimId, Value: Claim Object
- */
-const claimStore = new Map();
 
 export const claimService = {
   /**
@@ -16,7 +11,9 @@ export const claimService = {
     // 1. Verify Linked Employer (SCRUM-33)
     const linkedEmployer = await employerService.getLinkedEmployer(userId);
     if (!linkedEmployer) {
-      const error = new Error('No linked employer found. Link an employer before submitting reimbursement claims.');
+      const error = new Error(
+        'No linked employer found. Link an employer before submitting reimbursement claims.'
+      );
       error.statusCode = 400;
       error.code = 'NO_LINKED_EMPLOYER';
       throw error;
@@ -69,10 +66,10 @@ export const claimService = {
     const billRecord = await billService.getBillById(billId, userId);
 
     const claimId = `claim_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const now = new Date().toISOString();
+    const now = new Date();
 
-    const claimRecord = {
-      id: claimId,
+    const claimRecord = await ClaimModel.create({
+      claimId,
       userId,
       employerId: linkedEmployer.employerId,
       employerName: linkedEmployer.employerName,
@@ -81,37 +78,29 @@ export const claimService = {
       category: category.trim(),
       project: project.trim(),
       costCenter: costCenter.trim(),
-      billId: billRecord.id,
+      billId: billRecord.billId,
       billStorageKey: billRecord.storageKey,
       isReimbursable: true,
       status: 'Submitted',
       submittedAt: now,
       updatedAt: now,
-    };
+    });
 
-    claimStore.set(claimId, claimRecord);
-    return claimRecord;
+    return claimRecord.toObject();
   },
 
   /**
    * Get user's submitted claims list for "My Claims" view.
    */
   getUserClaims: async (userId) => {
-    const claims = [];
-    for (const claim of claimStore.values()) {
-      if (claim.userId === userId) {
-        claims.push(claim);
-      }
-    }
-    // Sort descending by submittedAt
-    return claims.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    return await ClaimModel.find({ userId }).sort({ submittedAt: -1 }).lean();
   },
 
   /**
    * Get specific claim details for authenticated owner.
    */
   getClaimById: async (claimId, requestingUserId) => {
-    const claim = claimStore.get(claimId);
+    const claim = await ClaimModel.findOne({ claimId }).lean();
     if (!claim) {
       const error = new Error(`Claim '${claimId}' not found.`);
       error.statusCode = 404;
@@ -129,9 +118,10 @@ export const claimService = {
   },
 
   /**
-   * Helper to clear store for testing
+   * Helper to clear store for testing.
    */
-  _clearStore: () => {
-    claimStore.clear();
+  _clearStore: async () => {
+    await ClaimModel.deleteMany({ userId: 'user_123' });
   },
 };
+

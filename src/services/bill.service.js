@@ -1,10 +1,5 @@
+import { BillModel } from '../models/bill.model.js';
 import { storageService } from './storage.service.js';
-
-/**
- * In-memory bill metadata store.
- * Key: billId, Value: Bill Object
- */
-const billStore = new Map();
 
 export const billService = {
   /**
@@ -25,8 +20,8 @@ export const billService = {
       file.buffer
     );
 
-    const billRecord = {
-      id: billId,
+    const billRecord = await BillModel.create({
+      billId,
       userId,
       originalName: file.originalname,
       mimeType: file.mimetype,
@@ -35,18 +30,17 @@ export const billService = {
       filePath: storageResult.filePath,
       merchantName: extraData.merchantName || 'Unspecified Merchant',
       totalAmount: extraData.totalAmount ? Number(extraData.totalAmount) : null,
-      uploadedAt: new Date().toISOString(),
-    };
+      uploadedAt: new Date(),
+    });
 
-    billStore.set(billId, billRecord);
-    return billRecord;
+    return billRecord.toObject();
   },
 
   /**
    * Fetch bill metadata with strict ownership validation (Tenant Isolation).
    */
   getBillById: async (billId, requestingUserId) => {
-    const bill = billStore.get(billId);
+    const bill = await BillModel.findOne({ billId }).lean();
     if (!bill) {
       const error = new Error(`Bill record '${billId}' not found.`);
       error.statusCode = 404;
@@ -68,19 +62,14 @@ export const billService = {
    * Fetch list of uploaded bills for authenticated user.
    */
   getUserBills: async (userId) => {
-    const userBills = [];
-    for (const bill of billStore.values()) {
-      if (bill.userId === userId) {
-        userBills.push(bill);
-      }
-    }
-    return userBills;
+    return await BillModel.find({ userId }).sort({ uploadedAt: -1 }).lean();
   },
 
   /**
-   * Helper to clear store for testing
+   * Helper to clear store for testing.
    */
-  _clearStore: () => {
-    billStore.clear();
+  _clearStore: async () => {
+    await BillModel.deleteMany({ userId: 'user_123' });
   },
 };
+

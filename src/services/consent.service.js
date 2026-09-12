@@ -1,8 +1,4 @@
-/**
- * In-memory storage for user consent settings.
- * Key: userId, Value: Consent Record
- */
-const consentStore = new Map();
+import { ConsentModel } from '../models/consent.model.js';
 
 const DEFAULT_CONSENTS = {
   upiConsent: false,
@@ -12,19 +8,20 @@ const DEFAULT_CONSENTS = {
 
 export const consentService = {
   /**
-   * Get current consents for a user.
+   * Get current consents for a user (creates default record if none exists).
    */
   getUserConsents: async (userId) => {
-    if (!consentStore.has(userId)) {
-      const initialRecord = {
+    let record = await ConsentModel.findOne({ userId }).lean();
+    if (!record) {
+      const created = await ConsentModel.create({
         userId,
         consents: { ...DEFAULT_CONSENTS },
         history: [],
-        updatedAt: new Date().toISOString(),
-      };
-      consentStore.set(userId, initialRecord);
+        updatedAt: new Date(),
+      });
+      record = created.toObject();
     }
-    return consentStore.get(userId);
+    return record;
   },
 
   /**
@@ -34,7 +31,7 @@ export const consentService = {
     const currentRecord = await consentService.getUserConsents(userId);
     const updatedConsents = { ...currentRecord.consents };
     const historyEntries = [];
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date();
 
     for (const key of ['upiConsent', 'billStorageConsent', 'aiUsageConsent']) {
       if (typeof newConsents[key] === 'boolean' && newConsents[key] !== updatedConsents[key]) {
@@ -47,14 +44,15 @@ export const consentService = {
       }
     }
 
-    const updatedRecord = {
-      userId,
-      consents: updatedConsents,
-      history: [...currentRecord.history, ...historyEntries],
-      updatedAt: timestamp,
-    };
+    const updatedRecord = await ConsentModel.findOneAndUpdate(
+      { userId },
+      {
+        $set: { consents: updatedConsents, updatedAt: timestamp },
+        $push: { history: { $each: historyEntries } },
+      },
+      { returnDocument: 'after', upsert: true }
+    );
 
-    consentStore.set(userId, updatedRecord);
     return updatedRecord;
   },
 
@@ -73,7 +71,9 @@ export const consentService = {
 
     const targetKey = keyMap[consentType];
     if (!targetKey) {
-      const error = new Error(`Invalid consent type: ${consentType}. Valid types: upi, billStorage, aiUsage`);
+      const error = new Error(
+        `Invalid consent type: ${consentType}. Valid types: upi, billStorage, aiUsage`
+      );
       error.statusCode = 400;
       error.code = 'INVALID_CONSENT_TYPE';
       throw error;
@@ -91,9 +91,10 @@ export const consentService = {
   },
 
   /**
-   * Helper to clear store for testing
+   * Helper to clear store for testing — deletes test user docs.
    */
-  _clearStore: () => {
-    consentStore.clear();
+  _clearStore: async () => {
+    await ConsentModel.deleteMany({ userId: 'user_123' });
   },
 };
+
