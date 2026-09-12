@@ -13,9 +13,9 @@ import { consentService } from '../src/services/consent.service.js';
 
 const MOCK_AUTH_HEADER = 'Bearer mock_token_123';
 
-beforeEach(() => {
-  employerService._clearStore();
-  consentService._clearStore();
+beforeEach(async () => {
+  await employerService._clearStore();
+  await consentService._clearStore();
 });
 
 describe('BR-02: Employer Linking', () => {

@@ -9,10 +9,26 @@ import { config } from './config/env.js';
 const app = express();
 
 // Security HTTP headers
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// Enable CORS
-app.use(cors({ origin: config.clientUrl, credentials: true }));
+// Enable CORS (Dynamic localhost allowed for Flutter Web dev)
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        config.nodeEnv === 'development' ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, origin === config.clientUrl);
+      }
+    },
+    credentials: true,
+  })
+);
 
 // HTTP request logger
 if (config.nodeEnv === 'development') {

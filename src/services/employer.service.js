@@ -1,8 +1,4 @@
-/**
- * In-memory storage for employer linking.
- * Key: userId, Value: Employer Object
- */
-const employerStore = new Map();
+import { EmployerModel } from '../models/employer.model.js';
 
 export const employerService = {
   /**
@@ -10,52 +6,56 @@ export const employerService = {
    * BR-02: User can link exactly one employer at a time.
    */
   linkEmployer: async (userId, employerData) => {
-    if (employerStore.has(userId)) {
-      const existing = employerStore.get(userId);
-      const error = new Error(`User already has a linked employer (${existing.employerName}). Unlink current employer before linking a new one.`);
+    const existing = await EmployerModel.findOne({ userId });
+    if (existing) {
+      const error = new Error(
+        `User already has a linked employer (${existing.employerName}). Unlink current employer before linking a new one.`
+      );
       error.statusCode = 400;
       error.code = 'EMPLOYER_ALREADY_LINKED';
       throw error;
     }
 
-    const linkedEmployer = {
+    const linkedEmployer = await EmployerModel.create({
+      userId,
       employerId: employerData.employerId || `emp_${Date.now()}`,
       employerName: employerData.employerName,
       corporateEmail: employerData.corporateEmail || null,
       employeeId: employerData.employeeId || null,
       verificationStatus: employerData.verificationStatus || 'VERIFIED',
-      linkedAt: new Date().toISOString(),
-    };
+      linkedAt: new Date(),
+    });
 
-    employerStore.set(userId, linkedEmployer);
-    return linkedEmployer;
+    return linkedEmployer.toObject();
   },
 
   /**
    * Get currently linked employer for a user.
    */
   getLinkedEmployer: async (userId) => {
-    return employerStore.get(userId) || null;
+    const employer = await EmployerModel.findOne({ userId }).lean();
+    return employer || null;
   },
 
   /**
    * Unlink employer for a user.
    */
   unlinkEmployer: async (userId) => {
-    if (!employerStore.has(userId)) {
+    const result = await EmployerModel.findOneAndDelete({ userId });
+    if (!result) {
       const error = new Error('No linked employer found to unlink.');
       error.statusCode = 404;
       error.code = 'NO_LINKED_EMPLOYER';
       throw error;
     }
-    employerStore.delete(userId);
     return true;
   },
 
   /**
-   * Helper to clear store for testing
+   * Helper to clear store for testing — deletes test user docs.
    */
-  _clearStore: () => {
-    employerStore.clear();
+  _clearStore: async () => {
+    await EmployerModel.deleteMany({ userId: 'user_123' });
   },
 };
+

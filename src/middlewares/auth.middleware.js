@@ -1,4 +1,6 @@
+import jwt from 'jsonwebtoken';
 import { ApiResponse } from '../utils/apiResponse.js';
+import { config } from '../config/env.js';
 
 export const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -6,13 +8,27 @@ export const authenticate = (req, res, next) => {
     return ApiResponse.error(res, 'Unauthorized access: No token provided', 401);
   }
 
-  // Placeholder token verification
   const token = authHeader.split(' ')[1];
   if (!token) {
     return ApiResponse.error(res, 'Unauthorized access: Invalid token', 401);
   }
 
-  // Attach mock user object
-  req.user = { id: 'user_123', email: 'user@fintrack.com' };
-  next();
+  // Test bypass: allow mock_token_123 in non-production environments
+  if (config.nodeEnv !== 'production' && token === 'mock_token_123') {
+    req.user = { id: 'user_123', phone: 'test@fintrack.com' };
+    return next();
+  }
+
+  // Verify real JWT
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    req.user = { id: decoded.userId, phone: decoded.phone };
+    next();
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return ApiResponse.error(res, 'Session expired. Please log in again.', 401);
+    }
+    return ApiResponse.error(res, 'Unauthorized access: Invalid or tampered token.', 401);
+  }
 };
+

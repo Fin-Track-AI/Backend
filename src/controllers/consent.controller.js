@@ -3,7 +3,7 @@ import { ApiResponse } from '../utils/apiResponse.js';
 
 export const getConsents = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const consentRecord = await consentService.getUserConsents(userId);
     return ApiResponse.success(res, 'User consent settings retrieved', consentRecord);
   } catch (error) {
@@ -13,7 +13,7 @@ export const getConsents = async (req, res, next) => {
 
 export const updateConsents = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { upiConsent, billStorageConsent, aiUsageConsent } = req.body;
 
     const updatedRecord = await consentService.updateConsents(userId, {
@@ -30,7 +30,7 @@ export const updateConsents = async (req, res, next) => {
 
 export const revokeConsent = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { consentType } = req.params;
 
     const updatedRecord = await consentService.revokeConsent(userId, consentType);
