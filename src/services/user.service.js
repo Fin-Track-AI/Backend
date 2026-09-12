@@ -64,13 +64,25 @@ export class UserService {
 
   static async updateFinancialProfile(userId, { name, salary, rent, bills, emi }) {
     const user = await UserModel.findById(userId);
-    if (!user) return null;
+    if (!user) {
+      return null;
+    }
 
-    if (name) user.name = name;
-    if (typeof salary === 'number') user.salary = salary;
-    if (typeof rent === 'number') user.rent = rent;
-    if (typeof bills === 'number') user.bills = bills;
-    if (typeof emi === 'number') user.emi = emi;
+    if (name) {
+      user.name = name;
+    }
+    if (typeof salary === 'number') {
+      user.salary = salary;
+    }
+    if (typeof rent === 'number') {
+      user.rent = rent;
+    }
+    if (typeof bills === 'number') {
+      user.bills = bills;
+    }
+    if (typeof emi === 'number') {
+      user.emi = emi;
+    }
     user.isSetupComplete = true;
 
     await user.save();
