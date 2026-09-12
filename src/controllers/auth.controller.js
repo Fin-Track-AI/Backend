@@ -27,13 +27,13 @@ export const sendEmailOtp = async (req, res, next) => {
     // Send email dispatch
     const delivery = await EmailService.sendOtpEmail({ email: cleanEmail, otp });
 
-    return ApiResponse.success(res, delivery.sent && delivery.method === 'smtp'
-      ? `Verification code delivered to ${cleanEmail}`
-      : 'Verification code generated (Check email or local console)', {
+    if (!delivery.sent) {
+      return ApiResponse.error(res, delivery.error || 'Failed to send verification email. Please check your email configuration.', 500);
+    }
+
+    return ApiResponse.success(res, `Verification code sent to ${cleanEmail}`, {
       email: cleanEmail,
-      deliveredToInbox: delivery.method === 'smtp',
-      // If delivery failed or SMTP is not yet configured, provide devOtp so user is not blocked
-      devOtp: delivery.method === 'smtp' ? undefined : otp,
+      deliveredToInbox: true,
     });
   } catch (error) {
     next(error);
