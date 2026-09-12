@@ -1,4 +1,6 @@
+import jwt from 'jsonwebtoken';
 import { ApiResponse } from '../utils/apiResponse.js';
+import { config } from '../config/env.js';
 
 export const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -11,16 +13,22 @@ export const authenticate = (req, res, next) => {
     return ApiResponse.error(res, 'Unauthorized access: Invalid token', 401);
   }
 
-  // Derive user identity based on token string (supports multi-tenant testing & production auth)
-  let userId = 'user_123';
-  if (token.includes('user_a')) {
-    userId = 'user_a';
-  } else if (token.includes('user_b')) {
-    userId = 'user_b';
-  } else if (token.startsWith('user_')) {
-    userId = token.replace(/_token.*$/, '');
+  // Test bypass: allow mock_token_123 in non-production environments
+  if (config.nodeEnv !== 'production' && token === 'mock_token_123') {
+    req.user = { id: 'user_123', phone: 'test@fintrack.com' };
+    return next();
   }
 
-  req.user = { id: userId, email: `${userId}@fintrack.com` };
-  next();
+  // Verify real JWT
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    req.user = { id: decoded.userId, phone: decoded.phone };
+    next();
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return ApiResponse.error(res, 'Session expired. Please log in again.', 401);
+    }
+    return ApiResponse.error(res, 'Unauthorized access: Invalid or tampered token.', 401);
+  }
 };
+

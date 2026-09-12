@@ -3,7 +3,7 @@ import { ApiResponse } from '../utils/apiResponse.js';
 
 export const linkEmployer = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { employerName, corporateEmail, employeeId } = req.body;
 
     if (!employerName) {
@@ -27,7 +27,7 @@ export const linkEmployer = async (req, res, next) => {
 
 export const getLinkedEmployer = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const employer = await employerService.getLinkedEmployer(userId);
 
     if (!employer) {
@@ -42,7 +42,7 @@ export const getLinkedEmployer = async (req, res, next) => {
 
 export const unlinkEmployer = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     await employerService.unlinkEmployer(userId);
     return ApiResponse.success(res, 'Employer unlinked successfully');
   } catch (error) {

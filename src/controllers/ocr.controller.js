@@ -4,7 +4,7 @@ import { ApiResponse } from '../utils/apiResponse.js';
 
 export const processBillOcr = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const userId = req.user?.id;
     const { billId } = req.params;
 
     // Fetch bill record with strict ownership check

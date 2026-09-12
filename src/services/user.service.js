@@ -1,59 +1,100 @@
-import mongoose from 'mongoose';
-
-const UserSchema = new mongoose.Schema({
-  phone: { type: String, required: true, unique: true },
-  email: { type: String, default: '' },
-  name: { type: String, default: 'FinTrack User' },
-  avatarUrl: { type: String, default: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80' },
-  lastLoginAt: { type: Date, default: Date.now },
-  createdAt: { type: Date, default: Date.now },
-});
-
-const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
+import jwt from 'jsonwebtoken';
+import { UserModel } from '../models/user.model.js';
+import { config } from '../config/env.js';
 
 export class UserService {
-  static async loginOrRegisterUser({ phone, email, name }) {
-    const cleanPhone = phone || '9876543210';
-    let user = await UserModel.findOne({ phone: cleanPhone });
+  static formatUserPayload(user) {
+    return {
+      id: user._id.toString(),
+      email: user.email,
+      phone: user.phone || '',
+      name: user.name || user.email.split('@')[0],
+      avatarUrl: user.avatarUrl || '',
+      salary: user.salary || 0,
+      rent: user.rent || 0,
+      bills: user.bills || 0,
+      emi: user.emi || 0,
+      isSetupComplete: user.isSetupComplete || false,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+    };
+  }
+
+  static generateToken(user) {
+    return jwt.sign(
+      { userId: user._id.toString(), email: user.email },
+      config.jwtSecret,
+      { expiresIn: config.jwtExpiresIn }
+    );
+  }
+
+  static async findOrCreateByEmail({ email, name, phone }) {
+    const cleanEmail = email.toLowerCase().trim();
+    let user = await UserModel.findOne({ email: cleanEmail });
 
     if (!user) {
+      const displayName = name && name.trim().length > 0
+        ? name.trim()
+        : cleanEmail.split('@')[0];
+
       user = await UserModel.create({
-        phone: cleanPhone,
-        email: email || `${cleanPhone}@fintrack.app`,
-        name: name || `User ${cleanPhone.slice(-4)}`,
+        email: cleanEmail,
+        phone: phone || '',
+        name: displayName,
         lastLoginAt: new Date(),
       });
     } else {
       user.lastLoginAt = new Date();
-      if (name) {
-        user.name = name;
+      if (name && name.trim().length > 0) {
+        user.name = name.trim();
       }
-      if (email) {
-        user.email = email;
+      if (phone) {
+        user.phone = phone;
       }
       await user.save();
     }
 
-    const token = `jwt_token_${user._id}_${Date.now()}`;
+    const token = this.generateToken(user);
+
     return {
-      user: {
-        id: user._id.toString(),
-        phone: user.phone,
-        email: user.email,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        createdAt: user.createdAt,
-        lastLoginAt: user.lastLoginAt,
-      },
+      user: this.formatUserPayload(user),
       token,
     };
   }
 
-  static async getUserByPhone(phone) {
-    return await UserModel.findOne({ phone });
+  static async updateFinancialProfile(userId, { name, salary, rent, bills, emi }) {
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return null;
+    }
+
+    if (name) {
+      user.name = name;
+    }
+    if (typeof salary === 'number') {
+      user.salary = salary;
+    }
+    if (typeof rent === 'number') {
+      user.rent = rent;
+    }
+    if (typeof bills === 'number') {
+      user.bills = bills;
+    }
+    if (typeof emi === 'number') {
+      user.emi = emi;
+    }
+    user.isSetupComplete = true;
+
+    await user.save();
+    return this.formatUserPayload(user);
   }
 
   static async getUserById(userId) {
-    return await UserModel.findById(userId);
+    const user = await UserModel.findById(userId);
+    return user ? this.formatUserPayload(user) : null;
+  }
+
+  static async getUserByEmail(email) {
+    return await UserModel.findOne({ email: email.toLowerCase().trim() });
   }
 }
