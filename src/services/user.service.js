@@ -25,8 +25,12 @@ export class UserService {
       });
     } else {
       user.lastLoginAt = new Date();
-      if (name) user.name = name;
-      if (email) user.email = email;
+      if (name) {
+        user.name = name;
+      }
+      if (email) {
+        user.email = email;
+      }
       await user.save();
     }
 

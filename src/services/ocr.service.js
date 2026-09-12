@@ -51,12 +51,12 @@ Total: $125.50
 
     let merchant = null;
     let amount = null;
-    let date = null;
+    let date;
     let tax = null;
 
     let merchantScore = 0;
     let amountScore = 0;
-    let dateScore = 0;
+    let dateScore;
     let taxScore = 0;
 
     // 1. Merchant Extraction
