@@ -32,11 +32,34 @@ export const uploadAndParseOcr = async (req, res, next) => {
   try {
     let ocrResult;
     if (req.file) {
-      ocrResult = await ocrService.processOcrText(req.file.buffer, req.file.originalname || '');
+      let resolvedMime = req.file.mimetype;
+      if (!resolvedMime || resolvedMime === 'application/octet-stream') {
+        const ext = (req.file.originalname || '').toLowerCase();
+        if (ext.endsWith('.png')) {
+          resolvedMime = 'image/png';
+        } else if (ext.endsWith('.webp')) {
+          resolvedMime = 'image/webp';
+        } else {
+          resolvedMime = 'image/jpeg';
+        }
+      }
+      ocrResult = await ocrService.processOcrText(
+        req.file.buffer,
+        req.file.originalname || '',
+        resolvedMime
+      );
     } else if (req.body.receiptText) {
       ocrResult = await ocrService.processOcrText(req.body.receiptText);
     } else {
       return ApiResponse.error(res, 'No receipt file or text provided for OCR processing', 400);
+    }
+
+    if (ocrResult && ocrResult.success === false) {
+      return res.status(422).json({
+        success: false,
+        message: ocrResult.message || 'The bill is blurry or unreadable. Please upload a clearer photo of your receipt.',
+        error: ocrResult.error || 'UNREADABLE_BILL',
+      });
     }
 
     return ApiResponse.success(res, 'Receipt parsed and pre-fill fields extracted', ocrResult, 200);

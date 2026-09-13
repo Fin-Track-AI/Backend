@@ -13,7 +13,10 @@ const ALLOWED_MIME_TYPES = [
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 const fileFilter = (req, file, cb) => {
-  if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+  const isImageMime = ALLOWED_MIME_TYPES.includes(file.mimetype);
+  const isImageExt = /\.(jpe?g|png|webp|heic)$/i.test(file.originalname || '');
+
+  if (!isImageMime && !(file.mimetype === 'application/octet-stream' && (isImageExt || !file.originalname))) {
     const error = new Error(`Invalid file type '${file.mimetype}'. Only image files (JPEG, PNG, WEBP, HEIC) are accepted.`);
     error.statusCode = 400;
     error.code = 'INVALID_FILE_TYPE';
