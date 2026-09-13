@@ -10,6 +10,8 @@ const TransactionSchema = new mongoose.Schema({
   isReimbursable: { type: Boolean, default: false },
   note: { type: String, default: '' },
   date: { type: Date, default: Date.now },
+  source: { type: String, enum: ['manual', 'ocr', 'statement'], default: 'manual' },
+  importBatchId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
 });
 
