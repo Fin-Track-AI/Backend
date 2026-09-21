@@ -24,6 +24,35 @@ export const submitClaim = async (req, res, next) => {
   }
 };
 
+export const getAllClaims = async (req, res, next) => {
+  try {
+    const claims = await claimService.getAllClaims();
+    return ApiResponse.success(res, 'Claims retrieved successfully', {
+      claims,
+      total: claims.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateClaimStatus = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const { status, adminNotes, rejectionReason } = req.body;
+
+    const updated = await claimService.updateClaimStatus(claimId, {
+      status,
+      adminNotes,
+      rejectionReason,
+    });
+
+    return ApiResponse.success(res, `Claim ${claimId} marked as ${status}`, updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getMyClaims = async (req, res, next) => {
   try {
     const userId = req.user?.id;
