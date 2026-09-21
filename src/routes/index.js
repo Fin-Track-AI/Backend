@@ -10,6 +10,7 @@ import aiRoutes from './ai.routes.js';
 import ocrRoutes from './ocr.routes.js';
 import claimRoutes from './claim.routes.js';
 import statementRoutes from './statement.routes.js';
+import budgetRoutes from './budget.routes.js';
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use('/ai', aiRoutes);
 router.use('/ocr', ocrRoutes);
 router.use('/claims', claimRoutes);
 router.use('/statement', statementRoutes);
+router.use('/budgets', budgetRoutes);
 
 export default router;
