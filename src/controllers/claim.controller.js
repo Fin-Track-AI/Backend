@@ -24,6 +24,60 @@ export const submitClaim = async (req, res, next) => {
   }
 };
 
+export const getAllClaims = async (req, res, next) => {
+  try {
+    const claims = await claimService.getAllClaims();
+    return ApiResponse.success(res, 'Claims retrieved successfully', {
+      claims,
+      total: claims.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateClaimStatus = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const { status, adminNotes, rejectionReason, note } = req.body;
+    const reviewerId = req.user?.id || 'Admin Reviewer';
+
+    const targetStatus = status || req.body.newStatus;
+    if (!targetStatus) {
+      return ApiResponse.error(res, 'Target status is required', 400);
+    }
+
+    const updatedClaim = await claimService.updateClaimStatus(claimId, {
+      status: targetStatus,
+      adminNotes: adminNotes || note,
+      rejectionReason,
+      note: note || adminNotes || rejectionReason,
+      reviewerId,
+    });
+
+    return ApiResponse.success(
+      res,
+      `Claim status successfully updated to ${targetStatus}`,
+      updatedClaim
+    );
+  } catch (error) {
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return ApiResponse.error(res, error.message, 400, { code: error.code });
+    }
+    next(error);
+  }
+};
+
+export const getEmployerClaims = async (req, res, next) => {
+  try {
+    const employerId = req.query.employerId || null;
+    const claims = await claimService.getEmployerClaims(employerId);
+    return ApiResponse.success(res, 'Employer claims retrieved successfully', { claims });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getMyClaims = async (req, res, next) => {
   try {
     const userId = req.user?.id;
@@ -41,36 +95,6 @@ export const getClaimDetails = async (req, res, next) => {
 
     const claimRecord = await claimService.getClaimById(claimId, userId);
     return ApiResponse.success(res, 'Claim details retrieved successfully', claimRecord);
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const updateClaimStatus = async (req, res, next) => {
-  try {
-    const { claimId } = req.params;
-    const { status, note } = req.body;
-    const reviewerId = req.user?.id || 'Admin Reviewer';
-
-    if (!status) {
-      return ApiResponse.error(res, 'Target status is required', 400);
-    }
-
-    const updatedClaim = await claimService.updateClaimStatus(claimId, status, note, reviewerId);
-    return ApiResponse.success(res, `Claim status successfully updated to ${status}`, updatedClaim);
-  } catch (error) {
-    if (error.code === 'INVALID_STATE_TRANSITION') {
-      return ApiResponse.error(res, error.message, 400, { code: error.code });
-    }
-    next(error);
-  }
-};
-
-export const getEmployerClaims = async (req, res, next) => {
-  try {
-    const employerId = req.query.employerId || null;
-    const claims = await claimService.getEmployerClaims(employerId);
-    return ApiResponse.success(res, 'Employer claims retrieved successfully', { claims });
   } catch (error) {
     next(error);
   }
