@@ -112,7 +112,9 @@ export const budgetService = {
     // 2. Category budget alert checks
     if (Array.isArray(budget.categoryBudgets)) {
       for (const cb of budget.categoryBudgets) {
-        if (!cb.amount || cb.amount <= 0) continue;
+        if (!cb.amount || cb.amount <= 0) {
+          continue;
+        }
         const spent = categorySpentMap[cb.category] || 0;
         const pct = (spent / cb.amount) * 100;
 
@@ -171,12 +173,18 @@ export const budgetService = {
     }
 
     // Determine age cohort
-    let cohortName = '25–30 age group';
-    if (age < 25) cohortName = '18–24 age group';
-    else if (age <= 30) cohortName = '25–30 age group';
-    else if (age <= 35) cohortName = '31–35 age group';
-    else if (age <= 40) cohortName = '36–40 age group';
-    else cohortName = '40+ age group';
+    let cohortName;
+    if (age < 25) {
+      cohortName = '18–24 age group';
+    } else if (age <= 30) {
+      cohortName = '25–30 age group';
+    } else if (age <= 35) {
+      cohortName = '31–35 age group';
+    } else if (age <= 40) {
+      cohortName = '36–40 age group';
+    } else {
+      cohortName = '40+ age group';
+    }
 
     // Current user's monthly spend
     const currentMonth = new Date().toISOString().substring(0, 7);

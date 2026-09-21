@@ -1,5 +1,4 @@
 import { ClaimModel } from '../models/claim.model.js';
-import { UserModel } from '../models/user.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
 
@@ -18,7 +17,7 @@ export const claimService = {
           employerId: 'emp_techcorp_2026',
           verificationStatus: 'VERIFIED',
         });
-      } catch (_) {
+      } catch {
         linkedEmployer = {
           employerId: 'emp_techcorp_2026',
           employerName: 'TechCorp Solutions India',
@@ -52,7 +51,7 @@ export const claimService = {
           billStorageKey = billRecord.storageKey || 'receipt_stored';
           resolvedBillId = billRecord.billId;
         }
-      } catch (_) {
+      } catch {
         // Fallback gracefully
         resolvedBillId = billId;
       }
