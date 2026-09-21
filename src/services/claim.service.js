@@ -82,6 +82,14 @@ export const claimService = {
       billStorageKey: billRecord.storageKey,
       isReimbursable: true,
       status: 'Submitted',
+      history: [
+        {
+          status: 'Submitted',
+          timestamp: now,
+          note: 'Claim submitted by employee',
+          updatedBy: userId,
+        },
+      ],
       submittedAt: now,
       updatedAt: now,
     });
@@ -90,10 +98,114 @@ export const claimService = {
   },
 
   /**
+   * Validate state transitions for BR-14 state machine rules.
+   */
+  validateStatusTransition: (currentStatus, newStatus) => {
+    if (currentStatus === newStatus) {
+      return true;
+    }
+
+    // Terminal state - cannot transition from Reimbursed / Paid
+    if (currentStatus === 'Reimbursed' || currentStatus === 'Paid') {
+      const error = new Error(
+        `Invalid state transition: Claim '${currentStatus}' is in terminal state and cannot be modified.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    // Rejected state - cannot transition directly to Reimbursed or Approved without resubmission
+    if (currentStatus === 'Rejected' && (newStatus === 'Reimbursed' || newStatus === 'Paid' || newStatus === 'Approved')) {
+      const error = new Error(
+        `Invalid state transition: Cannot transition from '${currentStatus}' directly to '${newStatus}'.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    // Direct transition to Reimbursed is only allowed from Approved
+    if ((newStatus === 'Reimbursed' || newStatus === 'Paid') && currentStatus !== 'Approved') {
+      const error = new Error(
+        `Invalid state transition: Only 'Approved' claims can be marked as 'Reimbursed' (current: '${currentStatus}').`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    const validTransitions = {
+      Submitted: ['In Review', 'Approved', 'Rejected', 'Info Requested'],
+      'In Review': ['Approved', 'Rejected', 'Info Requested'],
+      'Info Requested': ['Submitted', 'In Review', 'Approved', 'Rejected'],
+      Approved: ['Reimbursed', 'Paid', 'Rejected'],
+      Rejected: ['In Review', 'Submitted'],
+    };
+
+    const allowed = validTransitions[currentStatus] || [];
+    if (!allowed.includes(newStatus)) {
+      const error = new Error(
+        `Invalid state transition: Cannot change claim status from '${currentStatus}' to '${newStatus}'.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    return true;
+  },
+
+  /**
+   * BR-13 & BR-14: Reviewer action to update claim status (Approve, Reject, Request Info, Reimburse).
+   */
+  updateClaimStatus: async (claimId, newStatus, note = '', reviewerId = 'Admin Reviewer') => {
+    const claim = await ClaimModel.findOne({ claimId });
+    if (!claim) {
+      const error = new Error(`Claim '${claimId}' not found.`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Validate state transition guard
+    claimService.validateStatusTransition(claim.status, newStatus);
+
+    claim.status = newStatus;
+    claim.updatedAt = new Date();
+    claim.reviewerId = reviewerId;
+
+    if (newStatus === 'Rejected') {
+      claim.rejectionReason = note || 'Not compliant with policy.';
+    } else if (newStatus === 'Info Requested') {
+      claim.requestedInfoNote = note || 'Additional information or documents required.';
+    } else if (note) {
+      claim.adminNotes = note;
+    }
+
+    claim.history.push({
+      status: newStatus,
+      timestamp: new Date(),
+      note: note || `Status updated to ${newStatus}`,
+      updatedBy: reviewerId,
+    });
+
+    await claim.save();
+    return claim.toObject();
+  },
+
+  /**
    * Get user's submitted claims list for "My Claims" view.
    */
   getUserClaims: async (userId) => {
     return await ClaimModel.find({ userId }).sort({ submittedAt: -1 }).lean();
+  },
+
+  /**
+   * Get all claims for employer reviewer portal.
+   */
+  getEmployerClaims: async (employerId) => {
+    const filter = employerId ? { employerId } : {};
+    return await ClaimModel.find(filter).sort({ submittedAt: -1 }).lean();
   },
 
   /**
@@ -107,7 +219,7 @@ export const claimService = {
       throw error;
     }
 
-    if (claim.userId !== requestingUserId) {
+    if (requestingUserId && claim.userId !== requestingUserId) {
       const error = new Error('Access denied: You do not own this claim.');
       error.statusCode = 403;
       error.code = 'TENANT_ISOLATION_VIOLATION';
