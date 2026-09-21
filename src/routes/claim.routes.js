@@ -1,13 +1,30 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth.middleware.js';
-import { submitClaim, getMyClaims, getClaimDetails } from '../controllers/claim.controller.js';
+import {
+  submitClaim,
+  getAllClaims,
+  updateClaimStatus,
+  getMyClaims,
+  getClaimDetails,
+} from '../controllers/claim.controller.js';
 
 const router = Router();
 
-router.use(authenticate);
+// 1. Employer Dashboard Routes (Accessible by authorized dashboard)
+router.get('/', getAllClaims);
+router.patch('/:claimId/status', updateClaimStatus);
+router.post('/:claimId/approve', (req, res, next) => {
+  req.body.status = 'Approved';
+  return updateClaimStatus(req, res, next);
+});
+router.post('/:claimId/reject', (req, res, next) => {
+  req.body.status = 'Rejected';
+  return updateClaimStatus(req, res, next);
+});
 
-router.post('/', submitClaim);
-router.get('/my-claims', getMyClaims);
-router.get('/:claimId', getClaimDetails);
+// 2. Employee Routes (Require authentication from Flutter app)
+router.post('/', authenticate, submitClaim);
+router.get('/my-claims', authenticate, getMyClaims);
+router.get('/:claimId', authenticate, getClaimDetails);
 
 export default router;
