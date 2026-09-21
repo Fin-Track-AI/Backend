@@ -3,6 +3,7 @@ import { authenticate } from '../middlewares/auth.middleware.js';
 import {
   submitClaim,
   getAllClaims,
+  getEmployerClaims,
   updateClaimStatus,
   getMyClaims,
   getClaimDetails,
@@ -12,6 +13,7 @@ const router = Router();
 
 // 1. Employer Dashboard Routes (Accessible by authorized dashboard)
 router.get('/', getAllClaims);
+router.get('/employer/all', getEmployerClaims);
 router.patch('/:claimId/status', updateClaimStatus);
 router.post('/:claimId/approve', (req, res, next) => {
   req.body.status = 'Approved';
@@ -28,3 +30,4 @@ router.get('/my-claims', authenticate, getMyClaims);
 router.get('/:claimId', authenticate, getClaimDetails);
 
 export default router;
+
