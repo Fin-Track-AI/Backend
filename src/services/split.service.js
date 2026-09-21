@@ -342,8 +342,12 @@ export class SplitService {
       debtor.amount -= settleAmount;
       creditor.amount -= settleAmount;
 
-      if (debtor.amount < 0.05) d++;
-      if (creditor.amount < 0.05) c++;
+      if (debtor.amount < 0.05) {
+        d++;
+      }
+      if (creditor.amount < 0.05) {
+        c++;
+      }
     }
 
     return {
