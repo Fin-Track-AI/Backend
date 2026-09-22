@@ -1,9 +1,9 @@
 import { ConsentModel } from '../models/consent.model.js';
 
 const DEFAULT_CONSENTS = {
-  upiConsent: true,
-  billStorageConsent: true,
-  aiUsageConsent: true,
+  upiConsent: false,
+  billStorageConsent: false,
+  aiUsageConsent: false,
 };
 
 export const consentService = {
@@ -22,7 +22,7 @@ export const consentService = {
             updatedAt: new Date(),
           });
           record = created.toObject();
-        } catch (_) {
+        } catch {
           record = {
             userId,
             consents: { ...DEFAULT_CONSENTS },
@@ -32,7 +32,7 @@ export const consentService = {
         }
       }
       return record;
-    } catch (_) {
+    } catch {
       return {
         userId,
         consents: { ...DEFAULT_CONSENTS },
@@ -72,7 +72,7 @@ export const consentService = {
         { returnDocument: 'after', upsert: true }
       );
       return updatedRecord;
-    } catch (_) {
+    } catch {
       return {
         userId,
         consents: updatedConsents,
@@ -132,9 +132,9 @@ export const consentService = {
       if (record && record.consents && record.consents[key] !== undefined) {
         return Boolean(record.consents[key]);
       }
-      return true;
-    } catch (_) {
-      return true;
+      return false;
+    } catch {
+      return false;
     }
   },
 

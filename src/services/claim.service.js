@@ -18,7 +18,7 @@ export const claimService = {
           employerId: 'emp_techcorp_2026',
           verificationStatus: 'VERIFIED',
         });
-      } catch (_) {
+      } catch {
         linkedEmployer = {
           employerId: 'emp_techcorp_2026',
           employerName: 'TechCorp Solutions India',
@@ -52,7 +52,7 @@ export const claimService = {
           billStorageKey = billRecord.storageKey || 'receipt_stored';
           resolvedBillId = billRecord.billId;
         }
-      } catch (_) {
+      } catch {
         // Fallback gracefully
         resolvedBillId = billId;
       }
@@ -98,7 +98,9 @@ export const claimService = {
     const userMap = {};
     for (const u of users) {
       userMap[u._id.toString()] = u;
-      if (u.email) userMap[u.email] = u;
+      if (u.email) {
+        userMap[u.email] = u;
+      }
     }
 
     return claims.map((claim) => {
@@ -113,8 +115,12 @@ export const claimService = {
 
       // Normalize status
       let normStatus = claim.status || 'Pending';
-      if (normStatus === 'Submitted') normStatus = 'Pending';
-      if (normStatus === 'Reimbursed') normStatus = 'Paid';
+      if (normStatus === 'Submitted') {
+        normStatus = 'Pending';
+      }
+      if (normStatus === 'Reimbursed') {
+        normStatus = 'Paid';
+      }
 
       return {
         ...claim,
