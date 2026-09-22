@@ -45,7 +45,11 @@ export const authenticate = (req, res, next) => {
         throw e;
       }
     }
-    req.user = { id: decoded.userId, phone: decoded.phone };
+    req.user = {
+      id: decoded.userId || decoded.id,
+      phone: decoded.phone,
+      email: decoded.email,
+    };
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {

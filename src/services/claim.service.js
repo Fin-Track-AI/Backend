@@ -1,4 +1,5 @@
 import { ClaimModel } from '../models/claim.model.js';
+import { UserModel } from '../models/user.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
 
@@ -150,24 +151,60 @@ export const claimService = {
   },
 
   /**
-   * Get all claims formatted for employer dashboard
+   * Get all claims formatted for employer dashboard, enriched with user profiles.
    */
-  getAllClaims: async () => {
-    const claims = await ClaimModel.find().sort({ submittedAt: -1 }).lean();
+  getAllClaims: async (filter = {}) => {
+    const claims = await ClaimModel.find(filter).sort({ submittedAt: -1 }).lean();
+
+    // Fetch user profiles for all submitters
+    const userIds = [...new Set(claims.map((c) => c.userId))];
+    const users = await UserModel.find({
+      $or: [{ _id: { $in: userIds.filter((id) => id && id.length === 24) } }, { email: { $in: userIds } }],
+    }).lean();
+
+    const userMap = {};
+    for (const u of users) {
+      userMap[u._id.toString()] = u;
+      if (u.email) {
+        userMap[u.email] = u;
+      }
+    }
+
     return claims.map((claim) => {
+      const user = userMap[claim.userId] || {};
+      const empName = user.name || user.fullName || claim.employeeName || (user.email ? user.email.split('@')[0] : 'Employee');
+      const initials = empName
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+      // Normalize status
+      let normStatus = claim.status || 'Pending';
+      if (normStatus === 'Submitted') {
+        normStatus = 'Pending';
+      }
+      if (normStatus === 'Reimbursed') {
+        normStatus = 'Paid';
+      }
+
       return {
         id: claim.claimId || claim._id.toString(),
         claimId: claim.claimId || claim._id.toString(),
-        employeeName: claim.employeeName || 'Employee',
-        employeeEmail: claim.userId ? `${claim.userId}@company.com` : 'employee@company.com',
-        department: 'Operations',
-        employeeAvatar: (claim.title || 'EM').slice(0, 2).toUpperCase(),
+        employeeId: claim.userId,
+        employeeName: empName,
+        employeeEmail: user.email || (claim.userId ? `${claim.userId}@company.com` : 'employee@company.com'),
+        employeePhone: user.phone || '',
+        employeeAvatar: initials || (claim.title || 'EM').slice(0, 2).toUpperCase(),
+        department: user.department || 'Operations',
         title: claim.title,
         amount: claim.amount,
         category: claim.category || 'General',
         project: claim.project || 'Operations',
         costCenter: claim.costCenter || 'CC-100',
-        status: claim.status || 'Submitted',
+        status: normStatus,
+        rawStatus: claim.status || 'Submitted',
         submissionDate: claim.submittedAt
           ? new Date(claim.submittedAt).toISOString().split('T')[0]
           : new Date().toISOString().split('T')[0],
