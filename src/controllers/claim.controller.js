@@ -56,6 +56,21 @@ export const updateClaimStatus = async (req, res, next) => {
       reviewerId,
     });
 
+    try {
+      const { Notification } = await import('../models/notification.model.js');
+      await Notification.create({
+        userId: updatedClaim.userId,
+        title: `Claim ${targetStatus}: ${updatedClaim.title}`,
+        body: `Your reimbursement claim for ₹${updatedClaim.amount} has been ${targetStatus.toLowerCase()}.${adminNotes || rejectionReason ? ` Note: ${adminNotes || rejectionReason}` : ''}`,
+        type: 'claim',
+        data: {
+          claimId: updatedClaim._id?.toString(),
+          status: targetStatus,
+          amount: updatedClaim.amount,
+        },
+      });
+    } catch (_) {}
+
     return ApiResponse.success(
       res,
       `Claim status successfully updated to ${targetStatus}`,

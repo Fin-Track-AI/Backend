@@ -2,6 +2,7 @@ import { SplitGroup } from '../models/splitGroup.model.js';
 import { GroupExpense } from '../models/groupExpense.model.js';
 import { Settlement } from '../models/settlement.model.js';
 import { UserModel } from '../models/user.model.js';
+import { Notification } from '../models/notification.model.js';
 
 export class SplitService {
   /**
@@ -16,6 +17,8 @@ export class SplitService {
       const isCreator = m.memberId === createdBy || m.isCurrentUser;
       return {
         ...m,
+        memberId: m.memberId || m.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        phone: m.phone || m.phoneNumber || '',
         isCurrentUser: Boolean(isCreator),
         status: isCreator ? 'ACCEPTED' : (m.status || 'PENDING_INVITE'),
       };
@@ -35,6 +38,24 @@ export class SplitService {
           ...processedMembers,
         ];
 
+    // For invited members, match with existing DB users by phone
+    for (const m of finalMembers) {
+      if (!m.isCurrentUser && m.phone) {
+        try {
+          const last10 = m.phone.replace(/\D/g, '').slice(-10);
+          if (last10.length >= 10) {
+            const dbUser = await UserModel.findOne({
+              $or: [{ phone: m.phone.trim() }, { phone: { $regex: last10 + '$' } }],
+            });
+            if (dbUser) {
+              m.memberId = dbUser._id.toString();
+              if (!m.avatarUrl && dbUser.avatarUrl) m.avatarUrl = dbUser.avatarUrl;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     if (finalMembers.length < 2) {
       throw new Error('Please add at least 2 members to create a split group');
     }
@@ -45,6 +66,38 @@ export class SplitService {
       createdBy,
       members: finalMembers,
     });
+
+    // Create notifications for invited members & creator
+    try {
+      const invited = finalMembers.filter((m) => !m.isCurrentUser && m.status === 'PENDING_INVITE');
+      for (const inv of invited) {
+        await Notification.create({
+          userId: inv.memberId,
+          title: `Group Invitation: ${group.title}`,
+          body: `You have been invited to join "${group.title}" to split expenses.`,
+          type: 'invitation',
+          data: {
+            groupId: group._id.toString(),
+            groupName: group.title,
+            targetPhone: inv.phone || '',
+          },
+        });
+      }
+
+      const invitedNames = invited.map((m) => m.name).join(', ');
+      await Notification.create({
+        userId: createdBy,
+        title: `Group "${group.title}" Created`,
+        body: invited.length > 0 ? `Invitations sent to ${invitedNames}.` : `Group "${group.title}" created.`,
+        type: 'invitation',
+        data: {
+          groupId: group._id.toString(),
+          groupName: group.title,
+        },
+      });
+    } catch (err) {
+      console.warn('Split group notification creation warning:', err.message);
+    }
 
     return group;
   }
@@ -151,6 +204,14 @@ export class SplitService {
     }
 
     await group.save();
+
+    try {
+      await Notification.updateMany(
+        { 'data.groupId': groupId, userId: { $in: [userId, member.memberId] } },
+        { actionStatus: normalizedAction, isRead: true }
+      );
+    } catch (_) {}
+
     return group;
   }
 
@@ -378,6 +439,24 @@ export class SplitService {
       notes,
       itemizedEntries,
     });
+
+    try {
+      const otherMembers = group.members.filter((m) => m.memberId !== paidMember.memberId);
+      for (const m of otherMembers) {
+        await Notification.create({
+          userId: m.memberId,
+          title: `New Expense: ${expense.title}`,
+          body: `₹${expense.totalAmount} added in "${group.title}" by ${paidMember.name}.`,
+          type: 'splitExpense',
+          data: {
+            groupId: group._id.toString(),
+            groupName: group.title,
+            expenseId: expense._id.toString(),
+            targetPhone: m.phone || '',
+          },
+        });
+      }
+    } catch (_) {}
 
     return expense;
   }
