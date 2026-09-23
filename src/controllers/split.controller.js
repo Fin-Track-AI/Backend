@@ -212,6 +212,16 @@ export const addExpense = async (req, res, next) => {
   }
 };
 
+export const getGroupExpenses = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const expenses = await splitService.getExpensesByGroupId(id);
+    return ApiResponse.success(res, 'Group expenses fetched successfully', expenses);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getGroupBalances = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -257,6 +267,60 @@ export const markSettlement = async (req, res, next) => {
       'Settlement recorded successfully (Non-monetary ledger update)',
       settlement
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getGroupSettlements = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const settlements = await splitService.getSettlementsByGroupId(id);
+    return ApiResponse.success(res, 'Group settlements fetched successfully', settlements);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revertSettlement = async (req, res, next) => {
+  try {
+    const { debtKey } = req.params;
+    const result = await splitService.revertSettlement(debtKey);
+    return ApiResponse.success(res, 'Settlement reverted successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const sendReminder = async (req, res, next) => {
+  try {
+    const {
+      groupId,
+      debtKey,
+      fromMemberId,
+      fromMemberName,
+      toMemberId,
+      toMemberName,
+      amount,
+      message,
+    } = req.body;
+
+    if (!groupId || !amount) {
+      return ApiResponse.error(res, 'groupId and amount are required', 400);
+    }
+
+    const result = await splitService.sendReminderNotification({
+      groupId,
+      debtKey,
+      fromMemberId,
+      fromMemberName,
+      toMemberId,
+      toMemberName,
+      amount: Number(amount),
+      message,
+    });
+
+    return ApiResponse.success(res, 'Reminder sent successfully', result);
   } catch (error) {
     next(error);
   }

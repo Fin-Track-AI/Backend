@@ -9,8 +9,12 @@ export const getNotifications = async (req, res, next) => {
       try {
         const { UserModel } = await import('../models/user.model.js');
         const u = await UserModel.findById(userId).select('phone');
-        if (u && u.phone) userPhone = u.phone;
-      } catch (_) {}
+        if (u && u.phone) {
+          userPhone = u.phone;
+        }
+      } catch (err) {
+        console.warn('Phone resolution warning:', err.message);
+      }
     }
     const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
 

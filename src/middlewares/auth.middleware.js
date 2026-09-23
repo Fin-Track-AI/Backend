@@ -71,7 +71,9 @@ export const authenticate = async (req, res, next) => {
         if (dbUser && dbUser.phone) {
           req.user.phone = dbUser.phone;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn('User phone resolution warning:', err.message);
+      }
     }
     next();
   } catch (err) {

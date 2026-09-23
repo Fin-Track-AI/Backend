@@ -13,7 +13,7 @@ export const claimService = {
    */
   submitClaim: async (userId, claimData) => {
     // 1. Verify Employer Linkage
-    let linkedEmployer = await employerService.getLinkedEmployer(userId);
+    const linkedEmployer = await employerService.getLinkedEmployer(userId);
     if (!linkedEmployer) {
       const error = new Error('You must join your organization via an invite code before submitting reimbursement claims.');
       error.statusCode = 400;

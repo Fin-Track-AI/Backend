@@ -7,7 +7,7 @@ const notificationSchema = new mongoose.Schema(
     body: { type: String, required: true },
     type: {
       type: String,
-      enum: ['invitation', 'splitExpense', 'claim', 'system'],
+      enum: ['invitation', 'splitExpense', 'claim', 'system', 'splitReminder', 'settlement'],
       default: 'system',
     },
     isRead: { type: Boolean, default: false },

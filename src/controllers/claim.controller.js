@@ -69,7 +69,9 @@ export const updateClaimStatus = async (req, res, next) => {
           amount: updatedClaim.amount,
         },
       });
-    } catch (_) {}
+    } catch (notifErr) {
+      console.warn('Claim notification warning:', notifErr.message);
+    }
 
     return ApiResponse.success(
       res,
