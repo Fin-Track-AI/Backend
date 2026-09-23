@@ -1,5 +1,6 @@
 import { claimService } from '../services/claim.service.js';
 import { ApiResponse } from '../utils/apiResponse.js';
+import fs from 'fs';
 
 export const submitClaim = async (req, res, next) => {
   try {
@@ -116,6 +117,25 @@ export const deleteClaim = async (req, res, next) => {
     const result = await claimService.deleteClaim(claimId);
     return ApiResponse.success(res, 'Claim deleted successfully', result);
   } catch (error) {
+    next(error);
+  }
+};
+
+export const getClaimReceiptImage = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const { filePath, mimeType, originalName } = await claimService.getClaimReceiptImageFile(claimId);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return ApiResponse.error(res, error.message, 404);
+    }
     next(error);
   }
 };

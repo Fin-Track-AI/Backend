@@ -9,6 +9,7 @@ import {
   getClaimDetails,
   clearAllClaims,
   deleteClaim,
+  getClaimReceiptImage,
 } from '../controllers/claim.controller.js';
 
 const router = Router();
@@ -16,6 +17,7 @@ const router = Router();
 // 1. Employer Dashboard Routes (Accessible by authorized dashboard)
 router.get('/', getAllClaims);
 router.get('/employer/all', getEmployerClaims);
+router.get('/:claimId/receipt-image', getClaimReceiptImage);
 router.delete('/clear-all', clearAllClaims);
 router.delete('/:claimId', deleteClaim);
 router.patch('/:claimId/status', updateClaimStatus);
