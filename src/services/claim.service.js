@@ -9,22 +9,15 @@ export const claimService = {
    * Auto-links default employer if not yet linked.
    */
   submitClaim: async (userId, claimData) => {
-    // 1. Verify or auto-link Employer
+    // 1. Verify Employer Linkage
     let linkedEmployer = await employerService.getLinkedEmployer(userId);
     if (!linkedEmployer) {
-      try {
-        linkedEmployer = await employerService.linkEmployer(userId, {
-          employerName: 'TechCorp Solutions India',
-          employerId: 'emp_techcorp_2026',
-          verificationStatus: 'VERIFIED',
-        });
-      } catch {
-        linkedEmployer = {
-          employerId: 'emp_techcorp_2026',
-          employerName: 'TechCorp Solutions India',
-        };
-      }
+      const error = new Error('You must join your organization via an invite code before submitting reimbursement claims.');
+      error.statusCode = 400;
+      error.code = 'NO_LINKED_EMPLOYER';
+      throw error;
     }
+
 
     // 2. Validate Required Fields
     const { title, amount, category, project, costCenter, billId } = claimData;

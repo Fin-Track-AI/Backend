@@ -6,6 +6,9 @@ const EmployerSchema = new mongoose.Schema({
   employerName: { type: String, required: true },
   corporateEmail: { type: String, default: null },
   employeeId: { type: String, default: null },
+  department: { type: String, default: 'Engineering' },
+  monthlyAllowance: { type: Number, default: 25000 },
+  role: { type: String, default: 'Associate' },
   verificationStatus: {
     type: String,
     enum: ['VERIFIED', 'PENDING', 'REJECTED'],
@@ -13,6 +16,7 @@ const EmployerSchema = new mongoose.Schema({
   },
   linkedAt: { type: Date, default: Date.now },
 });
+
 
 export const EmployerModel =
   mongoose.models.Employer || mongoose.model('Employer', EmployerSchema);
