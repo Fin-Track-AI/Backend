@@ -9,7 +9,9 @@ const EmployerSchema = new mongoose.Schema(
     employeeId: { type: String, default: null },
     department: { type: String, default: 'Engineering' },
     monthlyAllowance: { type: Number, default: 25000 },
+    reimbursementLimit: { type: Number, default: null },
     role: { type: String, default: 'Associate' },
+    inviteCode: { type: String, default: null },
     verificationStatus: {
       type: String,
       enum: ['VERIFIED', 'PENDING', 'REJECTED'],

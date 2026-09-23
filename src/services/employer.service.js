@@ -185,7 +185,9 @@ export const employerService = {
         verificationStatus: 'VERIFIED',
         department: verification.department,
         monthlyAllowance: verification.monthlyAllowance,
+        reimbursementLimit: verification.reimbursementLimit || verification.monthlyAllowance,
         role: verification.role,
+        inviteCode: cleanCode,
         linkedAt: new Date(),
       });
     } catch (createErr) {
@@ -244,6 +246,7 @@ export const employerService = {
 
   /**
    * Unlink employer for a user.
+   * Also resets the invite code they used back to ACTIVE so the slot can be reused.
    */
   unlinkEmployer: async (userId) => {
     const result = await EmployerModel.findOneAndDelete({ userId });
@@ -253,6 +256,19 @@ export const employerService = {
       error.code = 'NO_LINKED_EMPLOYER';
       throw error;
     }
+
+    // Reset the invite code back to ACTIVE so the slot can be reused
+    if (result.inviteCode) {
+      await InviteCodeModel.findOneAndUpdate(
+        { code: result.inviteCode },
+        {
+          status: 'ACTIVE',
+          'claimedBy.userId': null,
+          'claimedBy.claimedAt': null,
+        }
+      );
+    }
+
     return true;
   },
 
