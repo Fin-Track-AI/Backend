@@ -1,6 +1,8 @@
 import { SplitGroup } from '../models/splitGroup.model.js';
 import { GroupExpense } from '../models/groupExpense.model.js';
 import { Settlement } from '../models/settlement.model.js';
+import { UserModel } from '../models/user.model.js';
+import { Notification } from '../models/notification.model.js';
 
 export class SplitService {
   /**
@@ -11,18 +13,52 @@ export class SplitService {
       throw new Error('Group title is required');
     }
 
+    const processedMembers = members.map((m) => {
+      const isCreator = m.memberId === createdBy || m.isCurrentUser;
+      return {
+        ...m,
+        memberId: m.memberId || m.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        phone: m.phone || m.phoneNumber || '',
+        isCurrentUser: Boolean(isCreator),
+        status: isCreator ? 'ACCEPTED' : (m.status || 'PENDING_INVITE'),
+      };
+    });
+
     // Ensure createdBy is in members list
-    const hasCreator = members.some((m) => m.memberId === createdBy || m.isCurrentUser);
+    const hasCreator = processedMembers.some((m) => m.memberId === createdBy || m.isCurrentUser);
     const finalMembers = hasCreator
-      ? members
+      ? processedMembers
       : [
           {
             memberId: createdBy,
             name: 'You',
             isCurrentUser: true,
+            status: 'ACCEPTED',
           },
-          ...members,
+          ...processedMembers,
         ];
+
+    // For invited members, match with existing DB users by phone
+    for (const m of finalMembers) {
+      if (!m.isCurrentUser && m.phone) {
+        try {
+          const last10 = m.phone.replace(/\D/g, '').slice(-10);
+          if (last10.length >= 10) {
+            const dbUser = await UserModel.findOne({
+              $or: [{ phone: m.phone.trim() }, { phone: { $regex: last10 + '$' } }],
+            });
+            if (dbUser) {
+              m.memberId = dbUser._id.toString();
+              if (!m.avatarUrl && dbUser.avatarUrl) {
+                m.avatarUrl = dbUser.avatarUrl;
+              }
+            }
+          }
+        } catch (lookupErr) {
+          console.warn('Member lookup warning:', lookupErr.message);
+        }
+      }
+    }
 
     if (finalMembers.length < 2) {
       throw new Error('Please add at least 2 members to create a split group');
@@ -35,13 +71,109 @@ export class SplitService {
       members: finalMembers,
     });
 
+    // Create notifications for invited members & creator
+    try {
+      const invited = finalMembers.filter((m) => !m.isCurrentUser && m.status === 'PENDING_INVITE');
+      for (const inv of invited) {
+        await Notification.create({
+          userId: inv.memberId,
+          title: `Group Invitation: ${group.title}`,
+          body: `You have been invited to join "${group.title}" to split expenses.`,
+          type: 'invitation',
+          data: {
+            groupId: group._id.toString(),
+            groupName: group.title,
+            targetPhone: inv.phone || '',
+          },
+        });
+      }
+
+      const invitedNames = invited.map((m) => m.name).join(', ');
+      await Notification.create({
+        userId: createdBy,
+        title: `Group "${group.title}" Created`,
+        body: invited.length > 0 ? `Invitations sent to ${invitedNames}.` : `Group "${group.title}" created.`,
+        type: 'invitation',
+        data: {
+          groupId: group._id.toString(),
+          groupName: group.title,
+        },
+      });
+    } catch (err) {
+      console.warn('Split group notification creation warning:', err.message);
+    }
+
     return group;
   }
 
-  async getGroupsByUser(userId) {
-    return SplitGroup.find({
-      $or: [{ createdBy: userId }, { 'members.memberId': userId }],
+  async attachExpensesToGroups(groups) {
+    if (!groups || groups.length === 0) {return [];}
+    return Promise.all(
+      groups.map((g) => this.attachExpensesToGroup(g))
+    );
+  }
+
+  async attachExpensesToGroup(group) {
+    if (!group) {return null;}
+    const doc = group.toObject ? group.toObject() : { ...group };
+    const id = (doc._id || doc.id).toString();
+    const [expenses, settlements] = await Promise.all([
+      GroupExpense.find({
+        $or: [{ groupId: id }, { groupId: doc._id }],
+      }).sort({ createdAt: -1 }).lean(),
+      Settlement.find({
+        $or: [{ groupId: id }, { groupId: doc._id }],
+        isSettled: true,
+      }).lean(),
+    ]);
+
+    return {
+      ...doc,
+      id,
+      expenses: expenses.map((e) => ({
+        ...e,
+        id: e._id.toString(),
+      })),
+      settledDebtKeys: settlements.map((s) => s.debtKey),
+    };
+  }
+
+  async getExpensesByGroupId(groupId) {
+    const expenses = await GroupExpense.find({
+      $or: [{ groupId: groupId.toString() }, { groupId }],
+    }).sort({ createdAt: -1 }).lean();
+
+    return expenses.map((e) => ({
+      ...e,
+      id: e._id.toString(),
+    }));
+  }
+
+  async getSettlementsByGroupId(groupId) {
+    const settlements = await Settlement.find({
+      $or: [{ groupId: groupId.toString() }, { groupId }],
+      isSettled: true,
+    }).lean();
+
+    return settlements.map((s) => ({
+      ...s,
+      id: s._id.toString(),
+    }));
+  }
+
+  async getGroupsByUser(userId, userPhone) {
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const phoneCondition = cleanPhone ? [{ 'members.phone': { $regex: cleanPhone + '$' } }] : [];
+
+    const groups = await SplitGroup.find({
+      $or: [
+        { createdBy: userId },
+        { 'members.memberId': userId },
+        ...phoneCondition,
+      ],
     }).sort({ updatedAt: -1 });
+
+    return this.attachExpensesToGroups(groups);
   }
 
   async getGroupById(groupId) {
@@ -49,15 +181,127 @@ export class SplitService {
     if (!group) {
       throw new Error('Group not found');
     }
+    return this.attachExpensesToGroup(group);
+  }
+
+  async lookupUserByPhone(phone) {
+    if (!phone) {
+      throw new Error('Phone number is required');
+    }
+
+    const digitsOnly = phone.toString().replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      throw new Error('Please provide a valid 10-digit mobile number');
+    }
+
+    const last10 = digitsOnly.slice(-10);
+
+    const user = await UserModel.findOne({
+      $or: [
+        { phone: phone.toString().trim() },
+        { phone: { $regex: last10 + '$' } },
+      ],
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user._id.toString(),
+      name: user.name || user.fullName || 'FinTrack User',
+      phone: user.phone || phone,
+      avatarUrl: user.avatarUrl || '',
+    };
+  }
+
+  async deleteGroup(groupId, _userId) {
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    // Cascade delete associated expenses and settlements
+    await GroupExpense.deleteMany({ groupId });
+    await Settlement.deleteMany({ groupId });
+    await SplitGroup.findByIdAndDelete(groupId);
+
+    return {
+      deletedGroupId: groupId,
+      title: group.title,
+    };
+  }
+
+  async respondToInvitation(groupId, userId, userPhone, action) {
+    const normalizedAction = (action || '').toUpperCase();
+    if (!['ACCEPT', 'DECLINE'].includes(normalizedAction)) {
+      throw new Error("Action must be 'ACCEPT' or 'DECLINE'");
+    }
+
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const member = group.members.find((m) => {
+      if (m.memberId === userId) {return true;}
+      if (cleanPhone && m.phone) {
+        const mDigits = m.phone.replace(/\D/g, '').slice(-10);
+        return mDigits === cleanPhone;
+      }
+      return false;
+    });
+
+    if (!member) {
+      throw new Error('You do not have an invitation to this group');
+    }
+
+    if (normalizedAction === 'ACCEPT') {
+      member.status = 'ACCEPTED';
+      member.memberId = userId;
+    } else {
+      member.status = 'DECLINED';
+    }
+
+    await group.save();
+
+    try {
+      await Notification.updateMany(
+        { 'data.groupId': groupId, userId: { $in: [userId, member.memberId] } },
+        { actionStatus: normalizedAction, isRead: true }
+      );
+    } catch (notifErr) {
+      console.warn('Invitation notification update warning:', notifErr.message);
+    }
+
     return group;
   }
 
+  async getUserInvitations(userId, userPhone) {
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const conditions = [{ 'members.memberId': userId, 'members.status': 'PENDING_INVITE' }];
+    if (cleanPhone) {
+      conditions.push({ 'members.phone': { $regex: cleanPhone + '$' }, 'members.status': 'PENDING_INVITE' });
+    }
+
+    const groups = await SplitGroup.find({
+      $or: conditions,
+    }).sort({ updatedAt: -1 });
+
+    return this.attachExpensesToGroups(groups);
+  }
+
   async addMemberToGroup(groupId, member) {
-    const group = await this.getGroupById(groupId);
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
 
     const exists = group.members.some(
       (m) =>
         m.memberId === member.memberId ||
+        (m.phone && member.phone && m.phone.replace(/\D/g, '').slice(-10) === member.phone.replace(/\D/g, '').slice(-10)) ||
         m.name.toLowerCase() === member.name.toLowerCase()
     );
 
@@ -65,7 +309,10 @@ export class SplitService {
       throw new Error(`Member '${member.name}' is already in this group`);
     }
 
-    group.members.push(member);
+    group.members.push({
+      ...member,
+      status: member.status || 'PENDING_INVITE',
+    });
     await group.save();
     return group;
   }
@@ -261,6 +508,32 @@ export class SplitService {
       itemizedEntries,
     });
 
+    try {
+      const otherMembers = group.members.filter((m) => m.memberId !== paidMember.memberId);
+      for (const m of otherMembers) {
+        await Notification.create({
+          userId: m.memberId,
+          title: `New Expense: ${expense.title}`,
+          body: `₹${expense.totalAmount} added in "${group.title}" by ${paidMember.name}.`,
+          type: 'splitExpense',
+          data: {
+            groupId: group._id.toString(),
+            groupName: group.title,
+            expenseId: expense._id.toString(),
+            targetPhone: m.phone || '',
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Expense notification warning:', notifErr.message);
+    }
+
+    try {
+      await SplitGroup.findByIdAndUpdate(groupId, { updatedAt: new Date() });
+    } catch (updateErr) {
+      console.warn('Group update warning:', updateErr.message);
+    }
+
     return expense;
   }
 
@@ -395,7 +668,121 @@ export class SplitService {
       { upsert: true, returnDocument: 'after' }
     );
 
+    // Notify the other user in the debt relation
+    try {
+      const group = await SplitGroup.findById(groupId);
+      const groupTitle = group ? group.title : 'group';
+      const isFromSettling = userId === fromMemberId;
+      const targetUserIdCandidate = isFromSettling ? toMemberId : fromMemberId;
+      const targetMember = group?.members?.find(
+        (m) =>
+          m.memberId === targetUserIdCandidate ||
+          m.id === targetUserIdCandidate ||
+          m._id?.toString() === targetUserIdCandidate
+      );
+      const actorName = isFromSettling ? fromMemberName : toMemberName;
+
+      let targetUserId = targetUserIdCandidate || targetMember?.memberId || targetMember?._id?.toString();
+      if (targetMember?.phone) {
+        const cleanPhone = targetMember.phone.replace(/\D/g, '').slice(-10);
+        if (cleanPhone) {
+          const u = await UserModel.findOne({ phone: { $regex: cleanPhone + '$' } });
+          if (u) {
+            targetUserId = u._id.toString();
+          }
+        }
+      }
+
+      await Notification.create({
+        userId: targetUserId || 'usr_me',
+        title: `Settlement Recorded: ₹${amount}`,
+        body: `${actorName || 'A group member'} marked ₹${amount} in "${groupTitle}" as settled (${settlementNote}).`,
+        type: 'settlement',
+        data: {
+          groupId,
+          groupName: groupTitle,
+          debtKey,
+          amount: Number(amount),
+          settledBy: actorName || 'Friend',
+          targetPhone: targetMember?.phone || '',
+        },
+      });
+    } catch (err) {
+      console.warn('Settlement notification warning:', err.message);
+    }
+
     return settlement;
+  }
+
+  async revertSettlement(debtKey) {
+    await Settlement.findOneAndDelete({ debtKey });
+    return { success: true, debtKey };
+  }
+
+  async sendReminderNotification({
+    groupId,
+    debtKey,
+    fromMemberId,
+    fromMemberName,
+    toMemberId,
+    toMemberName,
+    amount,
+    message,
+  }) {
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    const debtorMember = group.members.find(
+      (m) =>
+        m.memberId === fromMemberId ||
+        m.id === fromMemberId ||
+        m._id?.toString() === fromMemberId ||
+        (fromMemberName && m.name && m.name.toLowerCase() === fromMemberName.toLowerCase())
+    );
+
+    const senderName = toMemberName || 'Your friend';
+    let targetUserId = fromMemberId || debtorMember?.memberId || debtorMember?._id?.toString();
+
+    // Look up recipient in UserModel by phone to guarantee exact userId match
+    if (debtorMember?.phone) {
+      const cleanPhone = debtorMember.phone.replace(/\D/g, '').slice(-10);
+      if (cleanPhone) {
+        const u = await UserModel.findOne({ phone: { $regex: cleanPhone + '$' } });
+        if (u) {
+          targetUserId = u._id.toString();
+        }
+      }
+    }
+
+    const debtorName = fromMemberName || debtorMember?.name || 'friend';
+    const body =
+      message ||
+      `Hey ${debtorName}! 👋 Friendly nudge from ${senderName} regarding your ₹${amount} share in "${group.title}". Settle up via UPI/Cash when convenient!`;
+
+    const notification = await Notification.create({
+      userId: targetUserId || 'usr_me',
+      title: `Split Reminder: ₹${amount} in "${group.title}"`,
+      body,
+      type: 'splitReminder',
+      data: {
+        groupId,
+        groupName: group.title,
+        debtKey,
+        amount: Number(amount),
+        fromMemberId,
+        toMemberId,
+        senderName,
+        targetPhone: debtorMember?.phone || '',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Reminder notification delivered to member account',
+      notification,
+    };
   }
 
   generateReminderMessage({ groupTitle, debtorName, amount }) {

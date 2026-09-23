@@ -3,6 +3,7 @@ import app from '../src/app.js';
 import { SplitGroup } from '../src/models/splitGroup.model.js';
 import { GroupExpense } from '../src/models/groupExpense.model.js';
 import { Settlement } from '../src/models/settlement.model.js';
+import { UserModel } from '../src/models/user.model.js';
 
 describe('Split Expenses API (BR-16 to BR-19)', () => {
   const authHeader = 'Bearer mock_token_123';
@@ -12,6 +13,7 @@ describe('Split Expenses API (BR-16 to BR-19)', () => {
     await SplitGroup.deleteMany({});
     await GroupExpense.deleteMany({});
     await Settlement.deleteMany({});
+    await UserModel.deleteMany({ email: /test.*@fintrack\.com/ });
   });
 
   describe('BR-16: Group Creation & Member Management', () => {
@@ -259,6 +261,93 @@ describe('Split Expenses API (BR-16 to BR-19)', () => {
       expect(res.body.data.message).toContain('750');
       expect(res.body.data.message).toContain('Goa Trip 2026');
       expect(res.body.data.message).toContain('FinTrack');
+    });
+  });
+
+  describe('User Lookup, Deletion, and Group Invitation Flows', () => {
+    it('looks up a registered user by mobile phone and returns their name', async () => {
+      await UserModel.create({
+        email: 'test_sneha@fintrack.com',
+        fullName: 'Sneha Patel',
+        name: 'Sneha Patel',
+        phone: '+919844034567',
+      });
+
+      const res = await request(app)
+        .get('/api/v1/split/users/lookup')
+        .set('Authorization', authHeader)
+        .query({ phone: '9844034567' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.user.name).toBe('Sneha Patel');
+    });
+
+    it('returns 404 with error message when looking up an unregistered phone', async () => {
+      const res = await request(app)
+        .get('/api/v1/split/users/lookup')
+        .set('Authorization', authHeader)
+        .query({ phone: '9999988888' });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('This person is not available on FinTrack');
+    });
+
+    it('deletes a group and cascades deletion of its expenses and settlements', async () => {
+      const group = await SplitGroup.create({
+        title: 'Delete Me Group',
+        icon: '🗑️',
+        createdBy: 'user_123',
+        members: [
+          { memberId: 'user_123', name: 'Ritesh', isCurrentUser: true },
+          { memberId: 'm_ameya', name: 'Ameya' },
+        ],
+      });
+
+      await GroupExpense.create({
+        groupId: group._id.toString(),
+        title: 'Coffee',
+        totalAmount: 200,
+        paidByMemberId: 'user_123',
+        paidByMemberName: 'Ritesh',
+        splitType: 'equal',
+        allocations: [{ memberId: 'user_123', memberName: 'Ritesh', amount: 100, percentage: 50 }],
+      });
+
+      const res = await request(app)
+        .delete(`/api/v1/split/groups/${group._id}`)
+        .set('Authorization', authHeader);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const checkGroup = await SplitGroup.findById(group._id);
+      expect(checkGroup).toBeNull();
+      const checkExpenses = await GroupExpense.find({ groupId: group._id.toString() });
+      expect(checkExpenses.length).toBe(0);
+    });
+
+    it('handles group invitation response: accepts invite and marks status ACCEPTED', async () => {
+      const group = await SplitGroup.create({
+        title: 'Road Trip',
+        icon: '🚗',
+        createdBy: 'friend_456',
+        members: [
+          { memberId: 'friend_456', name: 'Friend', isCurrentUser: false, status: 'ACCEPTED' },
+          { memberId: 'user_123', name: 'Ritesh', isCurrentUser: false, status: 'PENDING_INVITE' },
+        ],
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/split/groups/${group._id}/invitation`)
+        .set('Authorization', authHeader)
+        .send({ action: 'ACCEPT' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      const userMember = res.body.data.members.find((m) => m.memberId === 'user_123');
+      expect(userMember.status).toBe('ACCEPTED');
     });
   });
 });

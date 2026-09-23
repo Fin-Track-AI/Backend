@@ -1,5 +1,6 @@
 import { claimService } from '../services/claim.service.js';
 import { ApiResponse } from '../utils/apiResponse.js';
+import fs from 'fs';
 
 export const submitClaim = async (req, res, next) => {
   try {
@@ -55,6 +56,23 @@ export const updateClaimStatus = async (req, res, next) => {
       reviewerId,
     });
 
+    try {
+      const { Notification } = await import('../models/notification.model.js');
+      await Notification.create({
+        userId: updatedClaim.userId,
+        title: `Claim ${targetStatus}: ${updatedClaim.title}`,
+        body: `Your reimbursement claim for ₹${updatedClaim.amount} has been ${targetStatus.toLowerCase()}.${adminNotes || rejectionReason ? ` Note: ${adminNotes || rejectionReason}` : ''}`,
+        type: 'claim',
+        data: {
+          claimId: updatedClaim._id?.toString(),
+          status: targetStatus,
+          amount: updatedClaim.amount,
+        },
+      });
+    } catch (notifErr) {
+      console.warn('Claim notification warning:', notifErr.message);
+    }
+
     return ApiResponse.success(
       res,
       `Claim status successfully updated to ${targetStatus}`,
@@ -99,4 +117,44 @@ export const getClaimDetails = async (req, res, next) => {
     next(error);
   }
 };
+
+export const clearAllClaims = async (req, res, next) => {
+  try {
+    const employerId = req.query.employerId || null;
+    const result = await claimService.clearAllClaims(employerId);
+    return ApiResponse.success(res, 'All demo claims cleared successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteClaim = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const result = await claimService.deleteClaim(claimId);
+    return ApiResponse.success(res, 'Claim deleted successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getClaimReceiptImage = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const { filePath, mimeType, originalName } = await claimService.getClaimReceiptImageFile(claimId);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return ApiResponse.error(res, error.message, 404);
+    }
+    next(error);
+  }
+};
+
 

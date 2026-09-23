@@ -30,7 +30,8 @@ export const createGroup = async (req, res, next) => {
 export const getGroups = async (req, res, next) => {
   try {
     const userId = req.user?.id || 'usr_me';
-    const groups = await splitService.getGroupsByUser(userId);
+    const userPhone = req.query.phone || req.user?.phone || '';
+    const groups = await splitService.getGroupsByUser(userId, userPhone);
     return ApiResponse.success(res, 'Groups fetched successfully', groups);
   } catch (error) {
     next(error);
@@ -42,6 +43,70 @@ export const getGroupById = async (req, res, next) => {
     const { id } = req.params;
     const group = await splitService.getGroupById(id);
     return ApiResponse.success(res, 'Group details fetched successfully', group);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteGroup = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id || 'usr_me';
+    const result = await splitService.deleteGroup(id, userId);
+    return ApiResponse.success(res, 'Group deleted successfully', result);
+  } catch (error) {
+    return ApiResponse.error(res, error.message, error.message === 'Group not found' ? 404 : 400);
+  }
+};
+
+export const lookupUserByPhone = async (req, res, next) => {
+  try {
+    const { phone } = req.query;
+    if (!phone) {
+      return ApiResponse.error(res, 'Mobile number is required', 400);
+    }
+
+    const user = await splitService.lookupUserByPhone(phone);
+    if (!user) {
+      return ApiResponse.error(
+        res,
+        'This person is not available on FinTrack. Please check the mobile number or invite them to join FinTrack.',
+        404,
+        { exists: false }
+      );
+    }
+
+    return ApiResponse.success(res, 'User found on FinTrack', { exists: true, user });
+  } catch (error) {
+    return ApiResponse.error(res, error.message, 400);
+  }
+};
+
+export const respondToInvitation = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+    const userId = req.user?.id || 'usr_me';
+    const userPhone = req.user?.phone || '';
+
+    const group = await splitService.respondToInvitation(id, userId, userPhone, action);
+    return ApiResponse.success(
+      res,
+      action === 'ACCEPT' ? 'Group invitation accepted' : 'Group invitation declined',
+      group
+    );
+  } catch (error) {
+    return ApiResponse.error(res, error.message, 400);
+  }
+};
+
+export const getInvitations = async (req, res, next) => {
+  try {
+    const userId = req.user?.id || 'usr_me';
+    const userPhone = req.query.phone || req.user?.phone || '';
+
+    const invitations = await splitService.getUserInvitations(userId, userPhone);
+    return ApiResponse.success(res, 'Invitations fetched successfully', invitations);
   } catch (error) {
     next(error);
   }
@@ -147,6 +212,16 @@ export const addExpense = async (req, res, next) => {
   }
 };
 
+export const getGroupExpenses = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const expenses = await splitService.getExpensesByGroupId(id);
+    return ApiResponse.success(res, 'Group expenses fetched successfully', expenses);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getGroupBalances = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -192,6 +267,60 @@ export const markSettlement = async (req, res, next) => {
       'Settlement recorded successfully (Non-monetary ledger update)',
       settlement
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getGroupSettlements = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const settlements = await splitService.getSettlementsByGroupId(id);
+    return ApiResponse.success(res, 'Group settlements fetched successfully', settlements);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revertSettlement = async (req, res, next) => {
+  try {
+    const { debtKey } = req.params;
+    const result = await splitService.revertSettlement(debtKey);
+    return ApiResponse.success(res, 'Settlement reverted successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const sendReminder = async (req, res, next) => {
+  try {
+    const {
+      groupId,
+      debtKey,
+      fromMemberId,
+      fromMemberName,
+      toMemberId,
+      toMemberName,
+      amount,
+      message,
+    } = req.body;
+
+    if (!groupId || !amount) {
+      return ApiResponse.error(res, 'groupId and amount are required', 400);
+    }
+
+    const result = await splitService.sendReminderNotification({
+      groupId,
+      debtKey,
+      fromMemberId,
+      fromMemberName,
+      toMemberId,
+      toMemberName,
+      amount: Number(amount),
+      message,
+    });
+
+    return ApiResponse.success(res, 'Reminder sent successfully', result);
   } catch (error) {
     next(error);
   }

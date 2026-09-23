@@ -25,7 +25,7 @@ export class UserService {
 
   static generateToken(user) {
     return jwt.sign(
-      { userId: user._id.toString(), email: user.email },
+      { userId: user._id.toString(), email: user.email, phone: user.phone || '' },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn }
     );

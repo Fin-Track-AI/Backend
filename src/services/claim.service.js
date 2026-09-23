@@ -1,7 +1,10 @@
 import { ClaimModel } from '../models/claim.model.js';
 import { UserModel } from '../models/user.model.js';
+import { BillModel } from '../models/bill.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
+import fs from 'fs';
+import path from 'path';
 
 export const claimService = {
   /**
@@ -9,22 +12,15 @@ export const claimService = {
    * Auto-links default employer if not yet linked.
    */
   submitClaim: async (userId, claimData) => {
-    // 1. Verify or auto-link Employer
-    let linkedEmployer = await employerService.getLinkedEmployer(userId);
+    // 1. Verify Employer Linkage
+    const linkedEmployer = await employerService.getLinkedEmployer(userId);
     if (!linkedEmployer) {
-      try {
-        linkedEmployer = await employerService.linkEmployer(userId, {
-          employerName: 'TechCorp Solutions India',
-          employerId: 'emp_techcorp_2026',
-          verificationStatus: 'VERIFIED',
-        });
-      } catch {
-        linkedEmployer = {
-          employerId: 'emp_techcorp_2026',
-          employerName: 'TechCorp Solutions India',
-        };
-      }
+      const error = new Error('You must join your organization via an invite code before submitting reimbursement claims.');
+      error.statusCode = 400;
+      error.code = 'NO_LINKED_EMPLOYER';
+      throw error;
     }
+
 
     // 2. Validate Required Fields
     const { title, amount, category, project, costCenter, billId } = claimData;
@@ -170,6 +166,14 @@ export const claimService = {
       }
     }
 
+    // Batch fetch linked bills for all claims
+    const billIds = [...new Set(claims.map((c) => c.billId).filter((b) => b && b !== 'manual_entry'))];
+    const bills = await BillModel.find({ billId: { $in: billIds } }).lean();
+    const billMap = {};
+    for (const b of bills) {
+      billMap[b.billId] = b;
+    }
+
     return claims.map((claim) => {
       const user = userMap[claim.userId] || {};
       const empName = user.name || user.fullName || claim.employeeName || (user.email ? user.email.split('@')[0] : 'Employee');
@@ -188,6 +192,10 @@ export const claimService = {
       if (normStatus === 'Reimbursed') {
         normStatus = 'Paid';
       }
+
+      const linkedBill = billMap[claim.billId] || {};
+      const hasBill = Boolean(linkedBill.filePath || (claim.billStorageKey && claim.billStorageKey !== 'receipt_stored'));
+      const originalFileName = linkedBill.originalName || (claim.billStorageKey ? path.basename(claim.billStorageKey) : 'Receipt_Attachment.jpg');
 
       return {
         id: claim.claimId || claim._id.toString(),
@@ -215,7 +223,7 @@ export const claimService = {
         rejectionReason: claim.rejectionReason || '',
         requestedInfoNote: claim.requestedInfoNote || '',
         receipt: {
-          merchant: claim.title || 'Merchant Receipt',
+          merchant: linkedBill.merchantName || claim.title || 'Merchant Receipt',
           invoiceNumber: `INV-${(claim.claimId || claim._id.toString()).slice(-6).toUpperCase()}`,
           gstin: '27AABCT3518Q1Z9',
           date: claim.submittedAt
@@ -224,7 +232,11 @@ export const claimService = {
           amount: claim.amount,
           tax: Math.round(claim.amount * 0.05),
           isReimbursable: true,
-          fileName: claim.billStorageKey ? `${claim.billStorageKey}.pdf` : 'Receipt_Attachment.pdf',
+          fileName: originalFileName,
+          fileSize: linkedBill.sizeBytes ? `${Math.round(linkedBill.sizeBytes / 1024)} KB` : 'Stored encrypted',
+          mimeType: linkedBill.mimeType || 'image/jpeg',
+          hasReceipt: hasBill,
+          imageUrl: hasBill ? `/claims/${claim.claimId || claim._id.toString()}/receipt-image` : null,
         },
       };
     });
@@ -328,5 +340,83 @@ export const claimService = {
     }
 
     return claim;
+  },
+
+  /**
+   * Delete all claims (clearing test/demo claims)
+   */
+  clearAllClaims: async (employerId = null) => {
+    const filter = employerId ? { employerId } : {};
+    const res = await ClaimModel.deleteMany(filter);
+    return { deletedCount: res.deletedCount };
+  },
+
+  /**
+   * Delete a specific claim by ID
+   */
+  deleteClaim: async (claimId) => {
+    const res = await ClaimModel.deleteOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    });
+    return { deleted: res.deletedCount > 0 };
+  },
+
+  /**
+   * Get file path and metadata for a claim's receipt image.
+   */
+  getClaimReceiptImageFile: async (claimId) => {
+    const claim = await ClaimModel.findOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    }).lean();
+
+    if (!claim) {
+      const error = new Error(`Claim '${claimId}' not found.`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let filePath = null;
+    let mimeType = 'image/jpeg';
+    let originalName = 'receipt.jpg';
+
+    // 1. Look up by billId in BillModel
+    if (claim.billId && claim.billId !== 'manual_entry') {
+      const bill = await BillModel.findOne({ billId: claim.billId }).lean();
+      if (bill && bill.filePath && fs.existsSync(bill.filePath)) {
+        filePath = bill.filePath;
+        originalName = bill.originalName || 'receipt.jpg';
+        mimeType = bill.mimeType || 'image/jpeg';
+      }
+    }
+
+    // 2. Fallback: storageKey or userId/billStorageKey
+    if (!filePath && claim.billStorageKey) {
+      const candidate = path.join(process.cwd(), 'uploads', 'bills', claim.billStorageKey);
+      if (fs.existsSync(candidate)) {
+        filePath = candidate;
+        originalName = path.basename(candidate);
+      }
+    }
+
+    if (originalName) {
+      const ext = path.extname(originalName).toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') {
+        mimeType = 'image/jpeg';
+      } else if (ext === '.png') {
+        mimeType = 'image/png';
+      } else if (ext === '.webp') {
+        mimeType = 'image/webp';
+      } else if (ext === '.pdf') {
+        mimeType = 'application/pdf';
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      const error = new Error('Receipt image not found for this claim.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return { filePath, mimeType, originalName };
   },
 };
