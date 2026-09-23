@@ -198,7 +198,11 @@ export const getCompanyEmployees = async (req, res, next) => {
       employerMap.set(le.userId, le);
     });
 
-    const employees = users.map((user) => {
+    // Only include users who have actually linked to this employer
+    const enrolledUsers = users.filter((u) => employerMap.has(u._id.toString()));
+
+    const employees = enrolledUsers.map((user) => {
+      const empLink = employerMap.get(user._id.toString());
       const userClaims = claims.filter(
         (c) => c.userId === user._id.toString() || c.userId === user.email
       );
@@ -208,17 +212,15 @@ export const getCompanyEmployees = async (req, res, next) => {
       const totalReimbursed = approvedClaims.reduce((sum, c) => sum + (c.amount || 0), 0);
       const name = user.name || user.fullName || user.email.split('@')[0];
 
-      const empLink = employerMap.get(user._id.toString());
-
       return {
         id: user._id.toString(),
         name,
         email: user.email,
         phone: user.phone || '+91 98000 00000',
-        department: empLink?.department || user.department || 'Engineering',
-        role: empLink?.role || user.role || 'Software Engineer',
-        status: empLink ? 'Active' : 'Unlinked',
-        monthlyAllowance: empLink?.monthlyAllowance || (user.salary ? Math.round(user.salary * 0.3) : 25000),
+        department: empLink?.department || 'Engineering',
+        role: empLink?.role || 'Team Member',
+        status: 'Active',
+        monthlyAllowance: empLink?.monthlyAllowance || 25000,
         totalReimbursed,
         claimsCount: userClaims.length,
         avatar:
@@ -230,9 +232,7 @@ export const getCompanyEmployees = async (req, res, next) => {
             .toUpperCase() || 'EM',
         joinedDate: empLink?.linkedAt
           ? new Date(empLink.linkedAt).toISOString().split('T')[0]
-          : user.createdAt
-          ? new Date(user.createdAt).toISOString().split('T')[0]
-          : '2024-04-01',
+          : '2026-09-23',
       };
     });
 

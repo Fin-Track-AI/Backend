@@ -100,3 +100,24 @@ export const getClaimDetails = async (req, res, next) => {
   }
 };
 
+export const clearAllClaims = async (req, res, next) => {
+  try {
+    const employerId = req.query.employerId || null;
+    const result = await claimService.clearAllClaims(employerId);
+    return ApiResponse.success(res, 'All demo claims cleared successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteClaim = async (req, res, next) => {
+  try {
+    const { claimId } = req.params;
+    const result = await claimService.deleteClaim(claimId);
+    return ApiResponse.success(res, 'Claim deleted successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+

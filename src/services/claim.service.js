@@ -322,4 +322,23 @@ export const claimService = {
 
     return claim;
   },
+
+  /**
+   * Delete all claims (clearing test/demo claims)
+   */
+  clearAllClaims: async (employerId = null) => {
+    const filter = employerId ? { employerId } : {};
+    const res = await ClaimModel.deleteMany(filter);
+    return { deletedCount: res.deletedCount };
+  },
+
+  /**
+   * Delete a specific claim by ID
+   */
+  deleteClaim: async (claimId) => {
+    const res = await ClaimModel.deleteOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    });
+    return { deleted: res.deletedCount > 0 };
+  },
 };
