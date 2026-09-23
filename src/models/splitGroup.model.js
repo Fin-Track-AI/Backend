@@ -7,6 +7,11 @@ const memberSubSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
     isCurrentUser: { type: Boolean, default: false },
+    status: {
+      type: String,
+      enum: ['ACCEPTED', 'PENDING_INVITE', 'DECLINED'],
+      default: 'PENDING_INVITE',
+    },
   },
   { _id: false }
 );

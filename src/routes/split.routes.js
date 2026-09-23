@@ -3,6 +3,10 @@ import {
   createGroup,
   getGroups,
   getGroupById,
+  deleteGroup,
+  lookupUserByPhone,
+  respondToInvitation,
+  getInvitations,
   addMember,
   addExpense,
   getGroupBalances,
@@ -16,10 +20,18 @@ const router = Router();
 // Allow optional/bypass authentication or standard auth for group operations
 router.use(authenticate);
 
+// User lookup by registered mobile phone
+router.get('/users/lookup', lookupUserByPhone);
+
+// Group invitations
+router.get('/invitations', getInvitations);
+router.post('/groups/:id/invitation', respondToInvitation);
+
 // Group management (BR-16)
 router.post('/groups', createGroup);
 router.get('/groups', getGroups);
 router.get('/groups/:id', getGroupById);
+router.delete('/groups/:id', deleteGroup);
 router.post('/groups/:id/members', addMember);
 
 // Expense splitting across 3 split methods (BR-17)

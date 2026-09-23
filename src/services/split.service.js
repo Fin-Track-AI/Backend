@@ -1,6 +1,7 @@
 import { SplitGroup } from '../models/splitGroup.model.js';
 import { GroupExpense } from '../models/groupExpense.model.js';
 import { Settlement } from '../models/settlement.model.js';
+import { UserModel } from '../models/user.model.js';
 
 export class SplitService {
   /**
@@ -11,17 +12,27 @@ export class SplitService {
       throw new Error('Group title is required');
     }
 
+    const processedMembers = members.map((m) => {
+      const isCreator = m.memberId === createdBy || m.isCurrentUser;
+      return {
+        ...m,
+        isCurrentUser: Boolean(isCreator),
+        status: isCreator ? 'ACCEPTED' : (m.status || 'PENDING_INVITE'),
+      };
+    });
+
     // Ensure createdBy is in members list
-    const hasCreator = members.some((m) => m.memberId === createdBy || m.isCurrentUser);
+    const hasCreator = processedMembers.some((m) => m.memberId === createdBy || m.isCurrentUser);
     const finalMembers = hasCreator
-      ? members
+      ? processedMembers
       : [
           {
             memberId: createdBy,
             name: 'You',
             isCurrentUser: true,
+            status: 'ACCEPTED',
           },
-          ...members,
+          ...processedMembers,
         ];
 
     if (finalMembers.length < 2) {
@@ -38,9 +49,16 @@ export class SplitService {
     return group;
   }
 
-  async getGroupsByUser(userId) {
+  async getGroupsByUser(userId, userPhone) {
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const phoneCondition = cleanPhone ? [{ 'members.phone': { $regex: cleanPhone + '$' } }] : [];
+
     return SplitGroup.find({
-      $or: [{ createdBy: userId }, { 'members.memberId': userId }],
+      $or: [
+        { createdBy: userId },
+        { 'members.memberId': userId },
+        ...phoneCondition,
+      ],
     }).sort({ updatedAt: -1 });
   }
 
@@ -52,12 +70,109 @@ export class SplitService {
     return group;
   }
 
+  async lookupUserByPhone(phone) {
+    if (!phone) {
+      throw new Error('Phone number is required');
+    }
+
+    const digitsOnly = phone.toString().replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      throw new Error('Please provide a valid 10-digit mobile number');
+    }
+
+    const last10 = digitsOnly.slice(-10);
+
+    const user = await UserModel.findOne({
+      $or: [
+        { phone: phone.toString().trim() },
+        { phone: { $regex: last10 + '$' } },
+      ],
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user._id.toString(),
+      name: user.name || user.fullName || 'FinTrack User',
+      phone: user.phone || phone,
+      avatarUrl: user.avatarUrl || '',
+    };
+  }
+
+  async deleteGroup(groupId, userId) {
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    // Cascade delete associated expenses and settlements
+    await GroupExpense.deleteMany({ groupId });
+    await Settlement.deleteMany({ groupId });
+    await SplitGroup.findByIdAndDelete(groupId);
+
+    return {
+      deletedGroupId: groupId,
+      title: group.title,
+    };
+  }
+
+  async respondToInvitation(groupId, userId, userPhone, action) {
+    const normalizedAction = (action || '').toUpperCase();
+    if (!['ACCEPT', 'DECLINE'].includes(normalizedAction)) {
+      throw new Error("Action must be 'ACCEPT' or 'DECLINE'");
+    }
+
+    const group = await SplitGroup.findById(groupId);
+    if (!group) {
+      throw new Error('Group not found');
+    }
+
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const member = group.members.find((m) => {
+      if (m.memberId === userId) return true;
+      if (cleanPhone && m.phone) {
+        const mDigits = m.phone.replace(/\D/g, '').slice(-10);
+        return mDigits === cleanPhone;
+      }
+      return false;
+    });
+
+    if (!member) {
+      throw new Error('You do not have an invitation to this group');
+    }
+
+    if (normalizedAction === 'ACCEPT') {
+      member.status = 'ACCEPTED';
+      member.memberId = userId;
+    } else {
+      member.status = 'DECLINED';
+    }
+
+    await group.save();
+    return group;
+  }
+
+  async getUserInvitations(userId, userPhone) {
+    const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+    const conditions = [{ 'members.memberId': userId, 'members.status': 'PENDING_INVITE' }];
+    if (cleanPhone) {
+      conditions.push({ 'members.phone': { $regex: cleanPhone + '$' }, 'members.status': 'PENDING_INVITE' });
+    }
+
+    return SplitGroup.find({
+      $or: conditions,
+    }).sort({ updatedAt: -1 });
+  }
+
   async addMemberToGroup(groupId, member) {
     const group = await this.getGroupById(groupId);
 
     const exists = group.members.some(
       (m) =>
         m.memberId === member.memberId ||
+        (m.phone && member.phone && m.phone.replace(/\D/g, '').slice(-10) === member.phone.replace(/\D/g, '').slice(-10)) ||
         m.name.toLowerCase() === member.name.toLowerCase()
     );
 
@@ -65,7 +180,10 @@ export class SplitService {
       throw new Error(`Member '${member.name}' is already in this group`);
     }
 
-    group.members.push(member);
+    group.members.push({
+      ...member,
+      status: member.status || 'PENDING_INVITE',
+    });
     await group.save();
     return group;
   }
