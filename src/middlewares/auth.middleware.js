@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { ApiResponse } from '../utils/apiResponse.js';
 import { config } from '../config/env.js';
+import { UserModel } from '../models/user.model.js';
 
-export const authenticate = (req, res, next) => {
+export const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     if (config.nodeEnv !== 'production') {
@@ -60,9 +61,18 @@ export const authenticate = (req, res, next) => {
     }
     req.user = {
       id: decoded.userId || decoded.id,
-      phone: decoded.phone,
+      phone: decoded.phone || '',
       email: decoded.email,
     };
+
+    if (!req.user.phone && req.user.id && req.user.id !== 'usr_me') {
+      try {
+        const dbUser = await UserModel.findById(req.user.id).select('phone');
+        if (dbUser && dbUser.phone) {
+          req.user.phone = dbUser.phone;
+        }
+      } catch (_) {}
+    }
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {

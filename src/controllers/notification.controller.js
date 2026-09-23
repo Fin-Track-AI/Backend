@@ -4,7 +4,14 @@ import { ApiResponse } from '../utils/apiResponse.js';
 export const getNotifications = async (req, res, next) => {
   try {
     const userId = req.user?.id || 'usr_me';
-    const userPhone = req.user?.phone || '';
+    let userPhone = req.query.phone || req.user?.phone || '';
+    if (!userPhone && userId && userId !== 'usr_me') {
+      try {
+        const { UserModel } = await import('../models/user.model.js');
+        const u = await UserModel.findById(userId).select('phone');
+        if (u && u.phone) userPhone = u.phone;
+      } catch (_) {}
+    }
     const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
 
     const conditions = [{ userId }];

@@ -30,7 +30,7 @@ export const createGroup = async (req, res, next) => {
 export const getGroups = async (req, res, next) => {
   try {
     const userId = req.user?.id || 'usr_me';
-    const userPhone = req.user?.phone || '';
+    const userPhone = req.query.phone || req.user?.phone || '';
     const groups = await splitService.getGroupsByUser(userId, userPhone);
     return ApiResponse.success(res, 'Groups fetched successfully', groups);
   } catch (error) {
@@ -103,7 +103,7 @@ export const respondToInvitation = async (req, res, next) => {
 export const getInvitations = async (req, res, next) => {
   try {
     const userId = req.user?.id || 'usr_me';
-    const userPhone = req.user?.phone || '';
+    const userPhone = req.query.phone || req.user?.phone || '';
 
     const invitations = await splitService.getUserInvitations(userId, userPhone);
     return ApiResponse.success(res, 'Invitations fetched successfully', invitations);
