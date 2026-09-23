@@ -60,9 +60,9 @@ export const employerService = {
   /**
    * Verify an invite code before joining.
    */
-  verifyInviteCode: async (rawCode) => {
+  verifyInviteCode: async (rawCode, userId = null) => {
     if (!rawCode || !rawCode.trim()) {
-      const err = new Error('Invite code is required');
+      const err = new Error('Invite code is required.');
       err.statusCode = 400;
       throw err;
     }
@@ -78,10 +78,25 @@ export const employerService = {
     }
 
     if (invite.status === 'CLAIMED') {
-      const err = new Error('This invite code has already been claimed by another employee.');
-      err.statusCode = 400;
-      err.code = 'INVITE_ALREADY_CLAIMED';
-      throw err;
+      // Allow retry if this exact user already claimed it previously but failed to complete linking
+      const isClaimedBySameUser =
+        userId && invite.claimedBy?.userId && invite.claimedBy.userId.toString() === userId.toString();
+
+      if (isClaimedBySameUser) {
+        const existingLink = await EmployerModel.findOne({ userId });
+        if (existingLink) {
+          const err = new Error('You have already joined this organization.');
+          err.statusCode = 400;
+          err.code = 'EMPLOYER_ALREADY_LINKED';
+          throw err;
+        }
+        // Link does not exist yet; permit re-claim/verification
+      } else {
+        const err = new Error('This invite code has already been claimed by another employee.');
+        err.statusCode = 400;
+        err.code = 'INVITE_ALREADY_CLAIMED';
+        throw err;
+      }
     }
 
     if (invite.status === 'REVOKED') {
@@ -116,7 +131,8 @@ export const employerService = {
    * Claim an invite code and join the organization.
    */
   claimInviteCode: async (userId, rawCode, userDetails = {}) => {
-    const verification = await employerService.verifyInviteCode(rawCode);
+    const cleanCode = rawCode.trim().toUpperCase();
+    const verification = await employerService.verifyInviteCode(rawCode, userId);
 
     // Check if user already linked to an employer
     const existing = await EmployerModel.findOne({ userId });
@@ -129,10 +145,15 @@ export const employerService = {
       throw err;
     }
 
-    // Mark invite as claimed
-    const cleanCode = rawCode.trim().toUpperCase();
+    // Mark invite as claimed (or update existing claim for this user)
     const updatedInvite = await InviteCodeModel.findOneAndUpdate(
-      { code: cleanCode, status: 'ACTIVE' },
+      {
+        code: cleanCode,
+        $or: [
+          { status: 'ACTIVE' },
+          { status: 'CLAIMED', 'claimedBy.userId': userId },
+        ],
+      },
       {
         status: 'CLAIMED',
         claimedBy: {
@@ -152,19 +173,32 @@ export const employerService = {
       throw err;
     }
 
-    // Create linked employer entry for user
-    const linked = await EmployerModel.create({
-      userId,
-      employerId: verification.companyId,
-      employerName: verification.companyName,
-      corporateEmail: userDetails.email || null,
-      employeeId: userDetails.employeeId || `EMP-${Date.now().toString().slice(-4)}`,
-      verificationStatus: 'VERIFIED',
-      department: verification.department,
-      monthlyAllowance: verification.monthlyAllowance,
-      role: verification.role,
-      linkedAt: new Date(),
-    });
+    // Create linked employer entry for user (with rollback on error)
+    let linked;
+    try {
+      linked = await EmployerModel.create({
+        userId,
+        employerId: verification.companyId,
+        employerName: verification.companyName,
+        corporateEmail: userDetails.email || null,
+        employeeId: userDetails.employeeId || `EMP-${Date.now().toString().slice(-4)}`,
+        verificationStatus: 'VERIFIED',
+        department: verification.department,
+        monthlyAllowance: verification.monthlyAllowance,
+        role: verification.role,
+        linkedAt: new Date(),
+      });
+    } catch (createErr) {
+      // Rollback invite code status if creation failed
+      await InviteCodeModel.updateOne(
+        { code: cleanCode },
+        {
+          status: 'ACTIVE',
+          claimedBy: { userId: null, name: null, email: null, phone: null, claimedAt: null },
+        }
+      );
+      throw createErr;
+    }
 
     return {
       success: true,

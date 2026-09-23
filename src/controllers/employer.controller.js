@@ -57,7 +57,8 @@ export const getCompanyInviteCodes = async (req, res, next) => {
 export const verifyInviteCode = async (req, res, next) => {
   try {
     const { code } = req.body;
-    const verified = await employerService.verifyInviteCode(code);
+    const userId = req.user?.id || req.body?.userId;
+    const verified = await employerService.verifyInviteCode(code, userId);
     return ApiResponse.success(res, 'Invite code is valid', verified);
   } catch (error) {
     if (error.statusCode) {
