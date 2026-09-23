@@ -9,6 +9,10 @@ import billsRoutes from './bills.routes.js';
 import aiRoutes from './ai.routes.js';
 import ocrRoutes from './ocr.routes.js';
 import claimRoutes from './claim.routes.js';
+import statementRoutes from './statement.routes.js';
+import budgetRoutes from './budget.routes.js';
+import splitRoutes from './split.routes.js';
+import notificationRoutes from './notification.routes.js';
 
 const router = Router();
 
@@ -22,5 +26,9 @@ router.use('/bills', billsRoutes);
 router.use('/ai', aiRoutes);
 router.use('/ocr', ocrRoutes);
 router.use('/claims', claimRoutes);
+router.use('/statement', statementRoutes);
+router.use('/budgets', budgetRoutes);
+router.use('/split', splitRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router;

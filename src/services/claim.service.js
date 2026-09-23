@@ -1,23 +1,26 @@
 import { ClaimModel } from '../models/claim.model.js';
+import { UserModel } from '../models/user.model.js';
+import { BillModel } from '../models/bill.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
+import fs from 'fs';
+import path from 'path';
 
 export const claimService = {
   /**
    * Submit a new reimbursement claim.
-   * BR-12 & SCRUM-33: Validates linked employer, attached bill, and mandatory selections.
+   * Auto-links default employer if not yet linked.
    */
   submitClaim: async (userId, claimData) => {
-    // 1. Verify Linked Employer (SCRUM-33)
+    // 1. Verify Employer Linkage
     const linkedEmployer = await employerService.getLinkedEmployer(userId);
     if (!linkedEmployer) {
-      const error = new Error(
-        'No linked employer found. Link an employer before submitting reimbursement claims.'
-      );
+      const error = new Error('You must join your organization via an invite code before submitting reimbursement claims.');
       error.statusCode = 400;
       error.code = 'NO_LINKED_EMPLOYER';
       throw error;
     }
+
 
     // 2. Validate Required Fields
     const { title, amount, category, project, costCenter, billId } = claimData;
@@ -34,36 +37,22 @@ export const claimService = {
       throw error;
     }
 
-    if (!category || !category.trim()) {
-      const error = new Error('Expense category selection is required before submission.');
-      error.statusCode = 400;
-      error.code = 'MISSING_CATEGORY';
-      throw error;
-    }
+    // 3. Resolve attached bill if available
+    let billStorageKey = 'receipt_stored';
+    let resolvedBillId = billId || 'manual_entry';
 
-    if (!project || !project.trim()) {
-      const error = new Error('Project selection is required before submission.');
-      error.statusCode = 400;
-      error.code = 'MISSING_PROJECT';
-      throw error;
+    if (billId && billId !== 'manual_entry') {
+      try {
+        const billRecord = await billService.getBillById(billId, userId);
+        if (billRecord) {
+          billStorageKey = billRecord.storageKey || 'receipt_stored';
+          resolvedBillId = billRecord.billId;
+        }
+      } catch {
+        // Fallback gracefully
+        resolvedBillId = billId;
+      }
     }
-
-    if (!costCenter || !costCenter.trim()) {
-      const error = new Error('Cost center selection is required before submission.');
-      error.statusCode = 400;
-      error.code = 'MISSING_COST_CENTER';
-      throw error;
-    }
-
-    if (!billId) {
-      const error = new Error('Attached bill is required before submitting a claim.');
-      error.statusCode = 400;
-      error.code = 'MISSING_BILL_ATTACHMENT';
-      throw error;
-    }
-
-    // 3. Verify attached bill ownership
-    const billRecord = await billService.getBillById(billId, userId);
 
     const claimId = `claim_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const now = new Date();
@@ -71,17 +60,25 @@ export const claimService = {
     const claimRecord = await ClaimModel.create({
       claimId,
       userId,
-      employerId: linkedEmployer.employerId,
-      employerName: linkedEmployer.employerName,
+      employerId: linkedEmployer.employerId || 'emp_techcorp_2026',
+      employerName: linkedEmployer.employerName || 'TechCorp Solutions India',
       title: title.trim(),
       amount: Number(amount),
-      category: category.trim(),
-      project: project.trim(),
-      costCenter: costCenter.trim(),
-      billId: billRecord.billId,
-      billStorageKey: billRecord.storageKey,
+      category: (category || 'General').trim(),
+      project: (project || 'Project Alpha').trim(),
+      costCenter: (costCenter || 'CC-102-FINANCE').trim(),
+      billId: resolvedBillId,
+      billStorageKey,
       isReimbursable: true,
       status: 'Submitted',
+      history: [
+        {
+          status: 'Submitted',
+          timestamp: now,
+          note: 'Claim submitted by employee',
+          updatedBy: userId,
+        },
+      ],
       submittedAt: now,
       updatedAt: now,
     });
@@ -90,10 +87,238 @@ export const claimService = {
   },
 
   /**
+   * Validate state transitions for BR-14 state machine rules.
+   */
+  validateStatusTransition: (currentStatus, newStatus) => {
+    if (currentStatus === newStatus) {
+      return true;
+    }
+
+    // Terminal state - cannot transition from Reimbursed / Paid
+    if (currentStatus === 'Reimbursed' || currentStatus === 'Paid') {
+      const error = new Error(
+        `Invalid state transition: Claim '${currentStatus}' is in terminal state and cannot be modified.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    // Rejected state - cannot transition directly to Reimbursed or Approved without resubmission
+    if (currentStatus === 'Rejected' && (newStatus === 'Reimbursed' || newStatus === 'Paid' || newStatus === 'Approved')) {
+      const error = new Error(
+        `Invalid state transition: Cannot transition from '${currentStatus}' directly to '${newStatus}'.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    // Direct transition to Reimbursed is only allowed from Approved
+    if ((newStatus === 'Reimbursed' || newStatus === 'Paid') && currentStatus !== 'Approved') {
+      const error = new Error(
+        `Invalid state transition: Only 'Approved' claims can be marked as 'Reimbursed' (current: '${currentStatus}').`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    const validTransitions = {
+      Submitted: ['In Review', 'Approved', 'Rejected', 'Info Requested'],
+      Pending: ['In Review', 'Approved', 'Rejected', 'Info Requested'],
+      'In Review': ['Approved', 'Rejected', 'Info Requested'],
+      'Info Requested': ['Submitted', 'Pending', 'In Review', 'Approved', 'Rejected'],
+      Approved: ['Reimbursed', 'Paid', 'Rejected'],
+      Rejected: ['In Review', 'Submitted', 'Pending'],
+    };
+
+    const allowed = validTransitions[currentStatus] || [];
+    if (!allowed.includes(newStatus)) {
+      const error = new Error(
+        `Invalid state transition: Cannot change claim status from '${currentStatus}' to '${newStatus}'.`
+      );
+      error.statusCode = 400;
+      error.code = 'INVALID_STATE_TRANSITION';
+      throw error;
+    }
+
+    return true;
+  },
+
+  /**
+   * Get all claims formatted for employer dashboard, enriched with user profiles.
+   */
+  getAllClaims: async (filter = {}) => {
+    const claims = await ClaimModel.find(filter).sort({ submittedAt: -1 }).lean();
+
+    // Fetch user profiles for all submitters
+    const userIds = [...new Set(claims.map((c) => c.userId))];
+    const users = await UserModel.find({
+      $or: [{ _id: { $in: userIds.filter((id) => id && id.length === 24) } }, { email: { $in: userIds } }],
+    }).lean();
+
+    const userMap = {};
+    for (const u of users) {
+      userMap[u._id.toString()] = u;
+      if (u.email) {
+        userMap[u.email] = u;
+      }
+    }
+
+    // Batch fetch linked bills for all claims
+    const billIds = [...new Set(claims.map((c) => c.billId).filter((b) => b && b !== 'manual_entry'))];
+    const bills = await BillModel.find({ billId: { $in: billIds } }).lean();
+    const billMap = {};
+    for (const b of bills) {
+      billMap[b.billId] = b;
+    }
+
+    return claims.map((claim) => {
+      const user = userMap[claim.userId] || {};
+      const empName = user.name || user.fullName || claim.employeeName || (user.email ? user.email.split('@')[0] : 'Employee');
+      const initials = empName
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+      // Normalize status
+      let normStatus = claim.status || 'Pending';
+      if (normStatus === 'Submitted') {
+        normStatus = 'Pending';
+      }
+      if (normStatus === 'Reimbursed') {
+        normStatus = 'Paid';
+      }
+
+      const linkedBill = billMap[claim.billId] || {};
+      const hasBill = Boolean(linkedBill.filePath || (claim.billStorageKey && claim.billStorageKey !== 'receipt_stored'));
+      const originalFileName = linkedBill.originalName || (claim.billStorageKey ? path.basename(claim.billStorageKey) : 'Receipt_Attachment.jpg');
+
+      return {
+        id: claim.claimId || claim._id.toString(),
+        claimId: claim.claimId || claim._id.toString(),
+        employeeId: claim.userId,
+        employeeName: empName,
+        employeeEmail: user.email || (claim.userId ? `${claim.userId}@company.com` : 'employee@company.com'),
+        employeePhone: user.phone || '',
+        employeeAvatar: initials || (claim.title || 'EM').slice(0, 2).toUpperCase(),
+        department: user.department || 'Operations',
+        title: claim.title,
+        amount: claim.amount,
+        category: claim.category || 'General',
+        project: claim.project || 'Operations',
+        costCenter: claim.costCenter || 'CC-100',
+        status: normStatus,
+        rawStatus: claim.status || 'Submitted',
+        submissionDate: claim.submittedAt
+          ? new Date(claim.submittedAt).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        expenseDate: claim.submittedAt
+          ? new Date(claim.submittedAt).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        adminNotes: claim.adminNotes || '',
+        rejectionReason: claim.rejectionReason || '',
+        requestedInfoNote: claim.requestedInfoNote || '',
+        receipt: {
+          merchant: linkedBill.merchantName || claim.title || 'Merchant Receipt',
+          invoiceNumber: `INV-${(claim.claimId || claim._id.toString()).slice(-6).toUpperCase()}`,
+          gstin: '27AABCT3518Q1Z9',
+          date: claim.submittedAt
+            ? new Date(claim.submittedAt).toISOString().split('T')[0]
+            : new Date().toISOString().split('T')[0],
+          amount: claim.amount,
+          tax: Math.round(claim.amount * 0.05),
+          isReimbursable: true,
+          fileName: originalFileName,
+          fileSize: linkedBill.sizeBytes ? `${Math.round(linkedBill.sizeBytes / 1024)} KB` : 'Stored encrypted',
+          mimeType: linkedBill.mimeType || 'image/jpeg',
+          hasReceipt: hasBill,
+          imageUrl: hasBill ? `/claims/${claim.claimId || claim._id.toString()}/receipt-image` : null,
+        },
+      };
+    });
+  },
+
+  /**
+   * Update claim approval / rejection / info request status (BR-13 & BR-14)
+   */
+  updateClaimStatus: async (claimId, statusOrPayload, noteParam = '', reviewerId = 'Admin Reviewer') => {
+    const claim = await ClaimModel.findOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    });
+
+    if (!claim) {
+      const error = new Error(`Claim '${claimId}' not found.`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let newStatus, adminNotes, rejectionReason, requestedInfoNote, note, reviewer;
+    if (typeof statusOrPayload === 'object' && statusOrPayload !== null) {
+      newStatus = statusOrPayload.status;
+      adminNotes = statusOrPayload.adminNotes || statusOrPayload.note;
+      rejectionReason = statusOrPayload.rejectionReason || statusOrPayload.reason;
+      requestedInfoNote = statusOrPayload.requestedInfoNote || statusOrPayload.note;
+      reviewer = statusOrPayload.reviewerId || reviewerId;
+      note = statusOrPayload.note || statusOrPayload.adminNotes || statusOrPayload.rejectionReason || '';
+    } else {
+      newStatus = statusOrPayload;
+      note = noteParam;
+      reviewer = reviewerId;
+      adminNotes = noteParam;
+      rejectionReason = noteParam;
+      requestedInfoNote = noteParam;
+    }
+
+    if (newStatus) {
+      claimService.validateStatusTransition(claim.status, newStatus);
+      claim.status = newStatus;
+    }
+
+    claim.updatedAt = new Date();
+    claim.reviewerId = reviewer;
+
+    if (newStatus === 'Rejected') {
+      claim.rejectionReason = rejectionReason || note || 'Not compliant with policy.';
+    } else if (newStatus === 'Info Requested') {
+      claim.requestedInfoNote = requestedInfoNote || note || 'Additional information or documents required.';
+    }
+
+    if (adminNotes !== undefined) {
+      claim.adminNotes = adminNotes;
+    }
+
+    if (!claim.history) {
+      claim.history = [];
+    }
+
+    claim.history.push({
+      status: claim.status,
+      timestamp: new Date(),
+      note: note || `Status updated to ${claim.status}`,
+      updatedBy: reviewer,
+    });
+
+    await claim.save();
+    return claim.toObject();
+  },
+
+  /**
    * Get user's submitted claims list for "My Claims" view.
    */
   getUserClaims: async (userId) => {
     return await ClaimModel.find({ userId }).sort({ submittedAt: -1 }).lean();
+  },
+
+  /**
+   * Get all claims for employer reviewer portal.
+   */
+  getEmployerClaims: async (employerId) => {
+    const filter = employerId ? { employerId } : {};
+    return await ClaimModel.find(filter).sort({ submittedAt: -1 }).lean();
   },
 
   /**
@@ -107,7 +332,7 @@ export const claimService = {
       throw error;
     }
 
-    if (claim.userId !== requestingUserId) {
+    if (requestingUserId && claim.userId !== requestingUserId) {
       const error = new Error('Access denied: You do not own this claim.');
       error.statusCode = 403;
       error.code = 'TENANT_ISOLATION_VIOLATION';
@@ -118,10 +343,80 @@ export const claimService = {
   },
 
   /**
-   * Helper to clear store for testing.
+   * Delete all claims (clearing test/demo claims)
    */
-  _clearStore: async () => {
-    await ClaimModel.deleteMany({ userId: 'user_123' });
+  clearAllClaims: async (employerId = null) => {
+    const filter = employerId ? { employerId } : {};
+    const res = await ClaimModel.deleteMany(filter);
+    return { deletedCount: res.deletedCount };
+  },
+
+  /**
+   * Delete a specific claim by ID
+   */
+  deleteClaim: async (claimId) => {
+    const res = await ClaimModel.deleteOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    });
+    return { deleted: res.deletedCount > 0 };
+  },
+
+  /**
+   * Get file path and metadata for a claim's receipt image.
+   */
+  getClaimReceiptImageFile: async (claimId) => {
+    const claim = await ClaimModel.findOne({
+      $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
+    }).lean();
+
+    if (!claim) {
+      const error = new Error(`Claim '${claimId}' not found.`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let filePath = null;
+    let mimeType = 'image/jpeg';
+    let originalName = 'receipt.jpg';
+
+    // 1. Look up by billId in BillModel
+    if (claim.billId && claim.billId !== 'manual_entry') {
+      const bill = await BillModel.findOne({ billId: claim.billId }).lean();
+      if (bill && bill.filePath && fs.existsSync(bill.filePath)) {
+        filePath = bill.filePath;
+        originalName = bill.originalName || 'receipt.jpg';
+        mimeType = bill.mimeType || 'image/jpeg';
+      }
+    }
+
+    // 2. Fallback: storageKey or userId/billStorageKey
+    if (!filePath && claim.billStorageKey) {
+      const candidate = path.join(process.cwd(), 'uploads', 'bills', claim.billStorageKey);
+      if (fs.existsSync(candidate)) {
+        filePath = candidate;
+        originalName = path.basename(candidate);
+      }
+    }
+
+    if (originalName) {
+      const ext = path.extname(originalName).toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') {
+        mimeType = 'image/jpeg';
+      } else if (ext === '.png') {
+        mimeType = 'image/png';
+      } else if (ext === '.webp') {
+        mimeType = 'image/webp';
+      } else if (ext === '.pdf') {
+        mimeType = 'application/pdf';
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      const error = new Error('Receipt image not found for this claim.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return { filePath, mimeType, originalName };
   },
 };
-

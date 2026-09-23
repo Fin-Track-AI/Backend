@@ -9,4 +9,5 @@ export const config = {
   mongoUri: process.env.MONGO_URI || '',
   jwtSecret: process.env.JWT_SECRET || 'dev_secret_key_change_in_production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
 };

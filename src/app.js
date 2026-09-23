@@ -11,20 +11,36 @@ const app = express();
 // Security HTTP headers
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// Enable CORS (Dynamic localhost allowed for Flutter Web dev)
+// Enable CORS (supports mobile apps, localhost, and configured client domains)
+const allowedOrigins = (config.clientUrl || '*')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Mobile apps, curl, and native HTTP clients send no Origin header
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Development, wildcard, or local addresses
       if (
-        !origin ||
         config.nodeEnv === 'development' ||
+        allowedOrigins.includes('*') ||
         origin.includes('localhost') ||
         origin.includes('127.0.0.1')
       ) {
-        callback(null, true);
-      } else {
-        callback(null, origin === config.clientUrl);
+        return callback(null, true);
       }
+
+      const cleanOrigin = origin.replace(/\/$/, '');
+      if (allowedOrigins.includes(cleanOrigin)) {
+        return callback(null, true);
+      }
+
+      return callback(null, false);
     },
     credentials: true,
   })
@@ -38,6 +54,15 @@ if (config.nodeEnv === 'development') {
 // Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Root health check for GCP Cloud Run and load balancers
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // Root welcome route
 app.get('/', (req, res) => {

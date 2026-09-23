@@ -8,7 +8,10 @@ export class UserService {
       id: user._id.toString(),
       email: user.email,
       phone: user.phone || '',
-      name: user.name || user.email.split('@')[0],
+      name: user.name || user.fullName || user.email.split('@')[0],
+      fullName: user.fullName || user.name || user.email.split('@')[0],
+      kycStatus: user.kycStatus || 'PENDING',
+      consentStatus: user.consentStatus || 'NONE',
       avatarUrl: user.avatarUrl || '',
       salary: user.salary || 0,
       rent: user.rent || 0,
@@ -22,7 +25,7 @@ export class UserService {
 
   static generateToken(user) {
     return jwt.sign(
-      { userId: user._id.toString(), email: user.email },
+      { userId: user._id.toString(), email: user.email, phone: user.phone || '' },
       config.jwtSecret,
       { expiresIn: config.jwtExpiresIn }
     );
@@ -37,19 +40,30 @@ export class UserService {
         ? name.trim()
         : cleanEmail.split('@')[0];
 
+      const cleanPhone = phone && phone.trim().length > 0
+        ? phone.trim()
+        : `+91${Date.now().toString().slice(-10)}`;
+
       user = await UserModel.create({
         email: cleanEmail,
-        phone: phone || '',
+        fullName: displayName,
         name: displayName,
+        phone: cleanPhone,
+        dob: new Date('2000-01-01'),
+        kycStatus: 'PENDING',
+        consentStatus: 'NONE',
         lastLoginAt: new Date(),
+        updatedAt: new Date(),
       });
     } else {
       user.lastLoginAt = new Date();
+      user.updatedAt = new Date();
       if (name && name.trim().length > 0) {
         user.name = name.trim();
+        user.fullName = name.trim();
       }
-      if (phone) {
-        user.phone = phone;
+      if (phone && phone.trim().length > 0) {
+        user.phone = phone.trim();
       }
       await user.save();
     }

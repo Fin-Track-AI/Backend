@@ -9,8 +9,20 @@ const UserSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
   },
-  phone: { type: String, default: '' },
+  fullName: { type: String, default: 'FinTrack User' },
   name: { type: String, default: 'FinTrack User' },
+  phone: { type: String, default: '' },
+  dob: { type: Date, default: () => new Date('2000-01-01') },
+  kycStatus: {
+    type: String,
+    enum: ['PENDING', 'VERIFIED', 'REJECTED'],
+    default: 'PENDING',
+  },
+  consentStatus: {
+    type: String,
+    enum: ['NONE', 'PARTIAL', 'FULL'],
+    default: 'NONE',
+  },
   avatarUrl: {
     type: String,
     default: '',
@@ -22,6 +34,7 @@ const UserSchema = new mongoose.Schema({
   isSetupComplete: { type: Boolean, default: false },
   lastLoginAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 export const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);

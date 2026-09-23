@@ -8,9 +8,10 @@ const startServer = async () => {
     // Initialize Database Connection
     await connectDB();
 
-    const server = app.listen(config.port, () => {
-      logger.info(`Server is running on port ${config.port} [${config.nodeEnv} mode]`);
-      logger.info(`Health check available at http://localhost:${config.port}/api/v1/health`);
+    const port = Number(config.port) || 5001;
+    const server = app.listen(port, '0.0.0.0', () => {
+      logger.info(`Server is running on port ${port} [${config.nodeEnv} mode]`);
+      logger.info(`Health check available at http://0.0.0.0:${port}/api/v1/health`);
     });
 
     // Graceful Shutdown
