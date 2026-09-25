@@ -203,5 +203,20 @@ describe('SCRUM-146: Data Masking (Cloud DLP)', () => {
       expect(result.timestamp).toBe(1727287200000);
       expect(result.upiId).toBe('ad****@okaxis');
     });
+
+    test('preserves Date objects and date strings without converting to indexed maps', () => {
+      const tx = {
+        title: 'Greenmart Grocers',
+        category: 'Groceries',
+        date: new Date('2026-09-26T12:00:00.000Z'),
+        createdAt: '2026-09-26T12:00:00.000Z',
+        amount: 1850,
+      };
+
+      const result = dlpService.maskSensitiveData(tx);
+      expect(typeof result.date).toBe('string');
+      expect(result.date).toBe('2026-09-26T12:00:00.000Z');
+      expect(Array.isArray(result.date)).toBe(false);
+    });
   });
 });
