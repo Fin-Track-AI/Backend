@@ -17,7 +17,10 @@ export const connectDB = async () => {
     config.mongoUri.includes('ssl=true') ||
     config.nodeEnv === 'production';
 
-  const connectionOptions = isRemote ? getMongoTlsOptions() : {};
+  // Pass driver-supported TLS options to prevent MongoParseError while preserving TLS compliance metadata
+  const tlsConfig = getMongoTlsOptions();
+  const driverTlsOptions = { tls: tlsConfig.tls };
+  const connectionOptions = isRemote ? driverTlsOptions : {};
 
   try {
     const conn = await mongoose.connect(config.mongoUri, connectionOptions);

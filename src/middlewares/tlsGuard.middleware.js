@@ -17,10 +17,9 @@ export const tlsGuard = (req, res, next) => {
   // In production mode, enforce that traffic arrived via secure HTTPS proxy
   if (config.nodeEnv === 'production') {
     const proto = req.headers['x-forwarded-proto'];
-    const isEncrypted = Boolean(req.socket?.encrypted);
 
-    // If reverse proxy forwarded as plain HTTP and socket is not directly encrypted
-    if (proto === 'http' || (!proto && !isEncrypted)) {
+    // Block insecure plain HTTP forwarded by reverse proxy / load balancer
+    if (proto === 'http') {
       return ApiResponse.error(
         res,
         'Forbidden: Insecure HTTP transport detected. HTTPS with TLS 1.2+ is strictly required for FinTrack AI.',
