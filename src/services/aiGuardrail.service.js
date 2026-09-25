@@ -63,6 +63,17 @@ export const aiGuardrailService = {
     response.complianceCode = response.complianceCode || aiGuardrailService.COMPLIANCE_CODE;
     response.isGrounded = true;
 
+    // Convert any $ or USD to ₹ in response strings
+    if (typeof response.reply === 'string') {
+      response.reply = response.reply.replace(/\$/g, '₹').replace(/\bUSD\b/gi, '₹');
+    }
+    if (typeof response.intro === 'string') {
+      response.intro = response.intro.replace(/\$/g, '₹').replace(/\bUSD\b/gi, '₹');
+    }
+    if (typeof response.tipBox === 'string') {
+      response.tipBox = response.tipBox.replace(/\$/g, '₹').replace(/\bUSD\b/gi, '₹');
+    }
+
     // If response has items, verify they don't contain hallucinated non-existent transaction data
     if (Array.isArray(response.items) && response.items.length > 0) {
       if (groundedTransactions.length > 0) {

@@ -218,11 +218,14 @@ export const aiService = {
         {
           parts: [
             {
-              text: `You are FinTrack AI, an intelligent personal finance assistant for mobile users.
+              text: `You are FinTrack AI, an intelligent personal finance assistant for mobile users in India.
 Context of user's real account ledger data: ${JSON.stringify(contextData)}.
 User prompt: "${prompt}".
 
-Provide a comprehensive, friendly, and highly actionable financial response grounded strictly in the user's real transactions and claims data above. Include specific numbers, categories, and tips. Avoid generic or filler disclaimers.`,
+CRITICAL RESPONSE RULES:
+1. CURRENCY: Always format currency amounts using the Indian Rupee symbol (₹). NEVER use $ or USD under any circumstances.
+2. FORMATTING: Structure your response with clean Markdown headers (### Header), bold key terms (**Term:** value), bullet points (* Item), and numbered action steps.
+3. ACCURACY: Provide a friendly, actionable financial response grounded strictly in the user's real transactions and claims data above.`,
             },
           ],
         },
