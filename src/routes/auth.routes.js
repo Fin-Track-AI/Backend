@@ -6,6 +6,7 @@ import {
   login,
   getProfile,
   updateProfile,
+  deleteAccount,
 } from '../controllers/auth.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 
@@ -17,5 +18,6 @@ router.post('/register', register);
 router.post('/login', login);
 router.get('/profile', authenticate, getProfile);
 router.put('/profile', authenticate, updateProfile);
+router.delete('/account', authenticate, deleteAccount);
 
 export default router;

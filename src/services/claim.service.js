@@ -3,6 +3,7 @@ import { UserModel } from '../models/user.model.js';
 import { BillModel } from '../models/bill.model.js';
 import { employerService } from './employer.service.js';
 import { billService } from './bill.service.js';
+import { auditService } from './audit.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -81,6 +82,20 @@ export const claimService = {
       ],
       submittedAt: now,
       updatedAt: now,
+    });
+
+    // SCRUM-164: Tamper-evident state change audit log
+    await auditService.logClaimMutation({
+      action: 'CLAIM_SUBMITTED',
+      actor: { userId, role: 'EMPLOYEE' },
+      target: { resourceType: 'CLAIM', resourceId: claimId },
+      metadata: {
+        amount: Number(amount),
+        title: title.trim(),
+        category: (category || 'General').trim(),
+        employerId: linkedEmployer.employerId || 'emp_techcorp_2026',
+        costCenter: (costCenter || 'CC-102-FINANCE').trim(),
+      },
     });
 
     return claimRecord.toObject();
@@ -273,6 +288,8 @@ export const claimService = {
       requestedInfoNote = noteParam;
     }
 
+    const previousStatus = claim.status;
+
     if (newStatus) {
       claimService.validateStatusTransition(claim.status, newStatus);
       claim.status = newStatus;
@@ -302,7 +319,35 @@ export const claimService = {
       updatedBy: reviewer,
     });
 
+    claim.settlementMethod = 'OFFLINE_PAYROLL_EXTERNAL';
+    claim.isFundMovementPrevented = true;
+
     await claim.save();
+
+    // SCRUM-164: Tamper-evident mutation audit log
+    const auditAction =
+      newStatus === 'Approved'
+        ? 'CLAIM_APPROVED'
+        : newStatus === 'Rejected'
+        ? 'CLAIM_REJECTED'
+        : newStatus === 'Info Requested'
+        ? 'CLAIM_INFO_REQUESTED'
+        : 'CLAIM_STATUS_UPDATED';
+
+    await auditService.logClaimMutation({
+      action: auditAction,
+      actor: { userId: reviewer, role: 'EMPLOYER_ADMIN' },
+      target: { resourceType: 'CLAIM', resourceId: claim.claimId || claimId },
+      metadata: {
+        previousStatus,
+        newStatus: claim.status,
+        rejectionReason: claim.rejectionReason,
+        note: note || '',
+        amount: claim.amount,
+        employeeId: claim.userId,
+      },
+    });
+
     return claim.toObject();
   },
 
@@ -352,12 +397,33 @@ export const claimService = {
   },
 
   /**
-   * Delete a specific claim by ID
+   * Delete a specific claim by ID (protected by 5-year statutory retention lock)
    */
-  deleteClaim: async (claimId) => {
-    const res = await ClaimModel.deleteOne({
+  deleteClaim: async (claimId, options = {}) => {
+    const claim = await ClaimModel.findOne({
       $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
     });
+
+    if (!claim) {
+      return { deleted: false, message: 'Claim not found' };
+    }
+
+    // SCRUM-155: Protect statutory claims under active 5-year retention
+    const isUnderRetention =
+      claim.isStatutoryRetention &&
+      claim.retentionUntil &&
+      new Date(claim.retentionUntil) > new Date();
+
+    if (isUnderRetention && !options.force) {
+      const err = new Error(
+        `Cannot delete claim '${claimId}': Record is protected under statutory financial retention until ${new Date(claim.retentionUntil).toISOString().split('T')[0]}.`
+      );
+      err.statusCode = 409;
+      err.code = 'STATUTORY_RETENTION_LOCKED';
+      throw err;
+    }
+
+    const res = await ClaimModel.deleteOne({ _id: claim._id });
     return { deleted: res.deletedCount > 0 };
   },
 

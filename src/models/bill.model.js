@@ -11,6 +11,23 @@ const BillSchema = new mongoose.Schema({
   merchantName: { type: String, default: 'Unspecified Merchant' },
   totalAmount: { type: Number, default: null },
   uploadedAt: { type: Date, default: Date.now },
+  retentionUntil: {
+    type: Date,
+    default: () => new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000),
+    index: true,
+  },
+  retentionCategory: {
+    type: String,
+    enum: ['STATUTORY_5_YEAR', 'STANDARD', 'TRANSIENT'],
+    default: 'STATUTORY_5_YEAR',
+  },
+  isStatutoryRetention: { type: Boolean, default: true },
+  retentionStatus: {
+    type: String,
+    enum: ['ACTIVE', 'ELIGIBLE_FOR_PURGE', 'PURGED'],
+    default: 'ACTIVE',
+    index: true,
+  },
 });
 
 export const BillModel =
