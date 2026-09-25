@@ -13,6 +13,8 @@ import statementRoutes from './statement.routes.js';
 import budgetRoutes from './budget.routes.js';
 import splitRoutes from './split.routes.js';
 import notificationRoutes from './notification.routes.js';
+import auditRoutes from './audit.routes.js';
+import retentionRoutes from './retention.routes.js';
 
 const router = Router();
 
@@ -30,5 +32,7 @@ router.use('/statement', statementRoutes);
 router.use('/budgets', budgetRoutes);
 router.use('/split', splitRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/audit', auditRoutes);
+router.use('/retention', retentionRoutes);
 
 export default router;

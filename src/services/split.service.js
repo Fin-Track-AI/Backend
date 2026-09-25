@@ -3,6 +3,7 @@ import { GroupExpense } from '../models/groupExpense.model.js';
 import { Settlement } from '../models/settlement.model.js';
 import { UserModel } from '../models/user.model.js';
 import { Notification } from '../models/notification.model.js';
+import { auditService } from './audit.service.js';
 
 export class SplitService {
   /**
@@ -711,11 +712,38 @@ export class SplitService {
       console.warn('Settlement notification warning:', err.message);
     }
 
+    // SCRUM-164: Tamper-evident ledger settlement logging
+    await auditService.logStateChange({
+      action: 'SPLIT_SETTLED',
+      actor: { userId: userId || 'user_anonymous', role: 'USER' },
+      target: { resourceType: 'SPLIT_SETTLEMENT', resourceId: debtKey },
+      metadata: {
+        groupId,
+        fromMemberId,
+        toMemberId,
+        amount: Number(amount),
+        settlementNote,
+      },
+    });
+
     return settlement;
   }
 
   async revertSettlement(debtKey) {
+    const existing = await Settlement.findOne({ debtKey }).lean();
     await Settlement.findOneAndDelete({ debtKey });
+
+    // SCRUM-164: Tamper-evident ledger reversal logging
+    await auditService.logStateChange({
+      action: 'SPLIT_SETTLEMENT_REVERTED',
+      actor: { userId: 'system_or_user', role: 'USER' },
+      target: { resourceType: 'SPLIT_SETTLEMENT', resourceId: debtKey },
+      metadata: {
+        amount: existing?.amount || 0,
+        groupId: existing?.groupId,
+      },
+    });
+
     return { success: true, debtKey };
   }
 
