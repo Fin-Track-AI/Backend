@@ -1,6 +1,6 @@
 import { claimService } from '../services/claim.service.js';
+import { storageService } from '../services/storage.service.js';
 import { ApiResponse } from '../utils/apiResponse.js';
-import fs from 'fs';
 
 export const submitClaim = async (req, res, next) => {
   try {
@@ -147,7 +147,7 @@ export const getClaimReceiptImage = async (req, res, next) => {
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
 
-    const stream = fs.createReadStream(filePath);
+    const stream = storageService.getFileStream(filePath);
     stream.pipe(res);
   } catch (error) {
     if (error.statusCode === 404) {

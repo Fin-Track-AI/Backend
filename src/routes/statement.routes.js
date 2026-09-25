@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { auditDataAccess } from '../middlewares/audit.middleware.js';
 import { uploadStatement, confirmStatement } from '../controllers/statement.controller.js';
 
 const router = express.Router();
@@ -28,12 +29,23 @@ const pdfUpload = multer({
  * Upload a PDF bank statement for AI parsing preview.
  * Returns a list of extracted transactions for user review.
  */
-router.post('/upload', authenticate, pdfUpload.single('statement'), uploadStatement);
+router.post(
+  '/upload',
+  authenticate,
+  auditDataAccess('STATEMENT', 'STATEMENT_UPLOAD_PARSED'),
+  pdfUpload.single('statement'),
+  uploadStatement
+);
 
 /**
  * POST /api/statement/confirm
  * Confirm and bulk-insert the reviewed transaction list.
  */
-router.post('/confirm', authenticate, confirmStatement);
+router.post(
+  '/confirm',
+  authenticate,
+  auditDataAccess('STATEMENT', 'STATEMENT_TRANSACTIONS_CONFIRMED'),
+  confirmStatement
+);
 
 export default router;
