@@ -94,7 +94,8 @@ export class SplitService {
         userId: createdBy,
         title: `Group "${group.title}" Created`,
         body: invited.length > 0 ? `Invitations sent to ${invitedNames}.` : `Group "${group.title}" created.`,
-        type: 'invitation',
+        type: 'system',
+        actionStatus: 'ACCEPTED',
         data: {
           groupId: group._id.toString(),
           groupName: group.title,
@@ -268,9 +269,10 @@ export class SplitService {
     await group.save();
 
     try {
+      const finalStatus = normalizedAction === 'ACCEPT' ? 'ACCEPTED' : 'DECLINED';
       await Notification.updateMany(
         { 'data.groupId': groupId, userId: { $in: [userId, member.memberId] } },
-        { actionStatus: normalizedAction, isRead: true }
+        { actionStatus: finalStatus, isRead: true }
       );
     } catch (notifErr) {
       console.warn('Invitation notification update warning:', notifErr.message);

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { TransactionModel } from '../models/transaction.model.js';
 import { ClaimModel } from '../models/claim.model.js';
 import { BudgetModel } from '../models/budget.model.js';
@@ -22,13 +23,17 @@ export const aiService = {
     const query = (prompt || '').trim().toLowerCase();
 
     // 1. Fetch User's Real Grounding Financial Context (SCRUM-172)
-    const [transactions, claims, budgets, groupExpenses, settlements] = await Promise.all([
-      TransactionModel.find({ userId }).sort({ date: -1 }).limit(50).lean().catch(() => []),
-      ClaimModel.find({ userId }).sort({ submittedAt: -1 }).limit(20).lean().catch(() => []),
-      BudgetModel.find({ userId }).lean().catch(() => []),
-      GroupExpense.find({ 'allocations.memberId': userId }).sort({ createdAt: -1 }).limit(10).lean().catch(() => []),
-      Settlement.find({ $or: [{ fromMemberId: userId }, { toMemberId: userId }] }).sort({ createdAt: -1 }).limit(10).lean().catch(() => []),
-    ]);
+    const isDbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+
+    const [transactions, claims, budgets, groupExpenses, settlements] = isDbConnected
+      ? await Promise.all([
+          TransactionModel.find({ userId: String(userId) }).sort({ date: -1 }).limit(50).lean().catch(() => []),
+          ClaimModel.find({ userId: String(userId) }).sort({ submittedAt: -1 }).limit(20).lean().catch(() => []),
+          BudgetModel.find({ userId: String(userId) }).lean().catch(() => []),
+          GroupExpense.find({ 'allocations.memberId': String(userId) }).sort({ createdAt: -1 }).limit(10).lean().catch(() => []),
+          Settlement.find({ $or: [{ fromMemberId: String(userId) }, { toMemberId: String(userId) }] }).sort({ createdAt: -1 }).limit(10).lean().catch(() => []),
+        ])
+      : [[], [], [], [], []];
 
     // Calculate aggregated metrics for grounding
     const totalTransactionsAmount = transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -71,12 +76,15 @@ export const aiService = {
 
     // 3. Fallback to Grounded Intelligence Engine (SCRUM-172 Response Grounding & SCRUM-194 Guardrails)
     let rawResult;
+
     if (isReimbursementQuery) {
       rawResult = {
         alertTag: 'REIMBURSEMENT AUDIT',
         alertSub: `${claims.length} Claims Total`,
         intro: `Here is the current status of your corporate expense claims:`,
-        reply: `You have submitted ${claims.length} claims totaling ₹${totalClaimAmount.toLocaleString('en-IN')}. ${approvedClaims.length} approved, ${pendingClaims.length} pending review.`,
+        reply: claims.length > 0
+          ? `You have submitted ${claims.length} claims totaling ₹${totalClaimAmount.toLocaleString('en-IN')}. ${approvedClaims.length} approved, ${pendingClaims.length} pending review.`
+          : 'You currently have 0 corporate reimbursement claims submitted in your connected account.',
         items: claims.slice(0, 3).map((c) => ({
           icon: 'receipt',
           title: c.title || 'Reimbursement Claim',
@@ -93,49 +101,45 @@ export const aiService = {
         alertTag: 'GROUP SPLIT BALANCES',
         alertSub: 'Active Group Expenses',
         intro: `Here is your current split expense summary across active groups:`,
-        reply: `You have ${groupExpenses.length} active shared expenses and ${settlements.length} recent settlements.`,
-        items: [
-          {
-            icon: 'people',
-            title: 'Indiranagar Trip & Dinner',
-            diff: '₹450 Owed to You',
-            diffColor: '#10B981',
-            desc: 'Rahul and 2 others owe you for dinner payment.',
-          },
-          {
-            icon: 'people',
-            title: 'Apartment Wi-Fi & Utilities',
-            diff: '₹200 You Owe',
-            diffColor: '#EF4444',
-            desc: 'Pending settlement to Priya for monthly fiber bill.',
-          },
-        ],
-        tipBox: 'Sending a gentle reminder to group members speeds up settlements by 40%.',
+        reply: groupExpenses.length > 0
+          ? `You have ${groupExpenses.length} active shared expenses and ${settlements.length} recent settlements.`
+          : 'You currently have 0 active shared split expenses or pending group settlements.',
+        items: groupExpenses.slice(0, 3).map((g) => ({
+          icon: 'people',
+          title: g.title || 'Shared Group Expense',
+          diff: `₹${(g.totalAmount || 0).toLocaleString('en-IN')}`,
+          diffColor: '#10B981',
+          desc: `Group: ${g.groupName || 'Split Expense'}`,
+        })),
+        tipBox: groupExpenses.length > 0 ? 'Sending a gentle reminder to group members speeds up settlements by 40%.' : 'Create a split group to easily share expenses with friends.',
         badgeSuccess: 'Split calculations balanced against shared ledger.',
         footerNote: `Computed across ${groupExpenses.length} split groups`,
       };
     } else if (isSubscriptionQuery) {
+      const subKeywords = ['netflix', 'spotify', 'gym', 'prime', 'youtube', 'apple', 'adobe', 'icloud', 'recurring', 'sub'];
+      const userSubs = transactions.filter((t) => {
+        const titleLower = (t.title || '').toLowerCase();
+        return subKeywords.some((kw) => titleLower.includes(kw));
+      });
+
+      const subTotal = userSubs.reduce((acc, t) => acc + (t.amount || 0), 0);
+
       rawResult = {
         alertTag: 'RECURRING COMMITMENTS',
         alertSub: 'Active Autopay',
-        intro: 'You have 3 active auto-detected recurring subscriptions totaling ₹1,298/mo:',
-        reply: 'Active subscriptions: Netflix (₹199/mo), Spotify (₹119/mo), Gym (₹980/mo).',
-        items: [
-          {
-            icon: 'movie',
-            title: 'Netflix India',
-            diff: '₹199/mo',
-            diffColor: '#E50914',
-            desc: 'Next billing date: 18th of this month • Auto-debit active',
-          },
-          {
-            icon: 'music',
-            title: 'Spotify Premium',
-            diff: '₹119/mo',
-            diffColor: '#1DB954',
-            desc: 'Next billing date: 24th of this month • Auto-debit active',
-          },
-        ],
+        intro: userSubs.length > 0
+          ? `You have ${userSubs.length} active recurring subscriptions totaling ₹${subTotal.toLocaleString('en-IN')}:`
+          : 'Subscription Scan Result:',
+        reply: userSubs.length > 0
+          ? `Active subscriptions detected in your transactions totaling ₹${subTotal.toLocaleString('en-IN')}.`
+          : 'No active recurring subscriptions detected in your transaction history.',
+        items: userSubs.slice(0, 3).map((s) => ({
+          icon: 'movie',
+          title: s.title || 'Recurring Subscription',
+          diff: `₹${(s.amount || 0).toLocaleString('en-IN')}`,
+          diffColor: '#E50914',
+          desc: `Category: ${s.category || 'Subscriptions'} • Auto-debit active`,
+        })),
         badgeSuccess: 'No unauthorized recurring charges detected in your ledger.',
         footerAction: 'Manage Auto-mandates →',
       };
@@ -143,50 +147,53 @@ export const aiService = {
       rawResult = {
         alertTag: 'SAVINGS GOAL TRACKER',
         alertSub: 'Monthly Progress',
-        intro: 'Analysis for your ₹10,000 Monthly Savings Goal:',
-        reply: `Based on your current monthly spend velocity of ₹${totalTransactionsAmount.toLocaleString('en-IN')}, you are on track to save ₹8,500 this month.`,
-        items: [
+        intro: 'Analysis for your Monthly Savings Goal:',
+        reply: `Based on your current total spend of ₹${totalTransactionsAmount.toLocaleString('en-IN')}, your financial ledger has recorded ${transactions.length} transactions this month.`,
+        items: transactions.length > 0 ? [
           {
             icon: 'savings',
-            title: 'Current Savings Pace',
-            diff: '85% Achieved',
+            title: 'Current Spend Pace',
+            diff: `₹${totalTransactionsAmount.toLocaleString('en-IN')}`,
             diffColor: '#F59E0B',
-            desc: `Saved ₹8,500 out of ₹10,000 target. ₹1,500 gap remaining for month end.`,
+            desc: `Computed across ${transactions.length} ledger transactions.`,
           },
-        ],
-        tipBox: 'Cutting weekend food delivery by 2 orders will close the ₹1,500 gap completely.',
-        badgeSuccess: 'Grounded against your monthly salary and fixed expenses.',
-        footerNote: 'Updated live from your synchronized budget model',
+        ] : [],
+        tipBox: transactions.length > 0 ? 'Tracking category caps weekly helps maximize monthly savings.' : 'Add your monthly target budget to track savings goals.',
+        badgeSuccess: 'Grounded against your synchronized expense data.',
+        footerNote: 'Updated live from your budget model',
+      };
+    } else if (transactions.length === 0) {
+      rawResult = {
+        alertTag: 'REAL-TIME LEDGER GROUNDING',
+        alertSub: '0 Recorded Transactions',
+        intro: 'Welcome to FinTrack AI Assistant!',
+        reply: 'You currently have 0 recorded transactions or claims in your account. Add income/expense transactions or link your account to view real-time spend velocity analytics and AI financial insights grounded in your actual data.',
+        items: [],
+        tipBox: 'Tip: Tap "+ Add Transaction" to get real-time category spending analytics.',
+        badgeSuccess: '100% Grounded against your verified account.',
+        footerNote: '0 ledger entries recorded',
       };
     } else {
       // Default / Category spend analysis query (SCRUM-172)
-      const foodSpend = categoryTotals['Food & Dining'] || categoryTotals['Food'] || 3240;
-      const transitSpend = categoryTotals['Transport'] || categoryTotals['Transit'] || 1420;
+      const sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+      const topCatName = sortedCategories.length > 0 ? sortedCategories[0][0] : 'General';
+      const topCatAmt = sortedCategories.length > 0 ? sortedCategories[0][1] : 0;
 
       rawResult = {
         alertTag: 'SPEND VELOCITY ANALYSIS',
         alertSub: 'Real-time Ledger Grounding',
-        intro: `Here is the grounded breakdown of your spending based on ${transactions.length || 28} verified transactions:`,
-        reply: `Total recorded spend is ₹${(totalTransactionsAmount || 8450).toLocaleString('en-IN')}. Top spending category is Food & Dining at ₹${foodSpend.toLocaleString('en-IN')}.`,
-        items: [
-          {
-            icon: 'restaurant',
-            title: 'Food & Dining',
-            diff: `₹${foodSpend.toLocaleString('en-IN')} (+18% MoM)`,
-            diffColor: '#EF4444',
-            desc: 'Food delivery and restaurant dining accounted for your largest spend category.',
-          },
-          {
-            icon: 'transit',
-            title: 'Transit & Mobility',
-            diff: `₹${transitSpend.toLocaleString('en-IN')}`,
-            diffColor: '#F59E0B',
-            desc: 'Uber & auto rides during weekend peak hours.',
-          },
-        ],
-        tipBox: 'Setting a Category Budget limit of ₹3,000 on Dining out can help you save ~₹1,200 next month.',
+        intro: `Here is the grounded breakdown of your spending based on ${transactions.length} verified transactions:`,
+        reply: `Total recorded spend is ₹${totalTransactionsAmount.toLocaleString('en-IN')}. Top spending category is ${topCatName} at ₹${topCatAmt.toLocaleString('en-IN')}.`,
+        items: sortedCategories.slice(0, 3).map(([cat, amt]) => ({
+          icon: cat.toLowerCase().includes('food') || cat.toLowerCase().includes('dining') ? 'restaurant' : cat.toLowerCase().includes('transport') || cat.toLowerCase().includes('transit') ? 'transit' : 'receipt',
+          title: cat,
+          diff: `₹${amt.toLocaleString('en-IN')}`,
+          diffColor: '#FF6B00',
+          desc: `Total recorded spending in ${cat}.`,
+        })),
+        tipBox: sortedCategories.length > 0 ? `Setting a budget limit on ${topCatName} can help you optimize monthly savings.` : 'Add transactions to see category velocity breakdown.',
         badgeSuccess: '100% Grounded against verified bank transactions.',
-        footerNote: `Computed across ${transactions.length || 28} verified ledger entries`,
+        footerNote: `Computed across ${transactions.length} verified ledger entries`,
       };
     }
 

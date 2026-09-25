@@ -64,20 +64,24 @@ export const aiGuardrailService = {
     response.isGrounded = true;
 
     // If response has items, verify they don't contain hallucinated non-existent transaction data
-    if (Array.isArray(response.items) && response.items.length > 0 && groundedTransactions.length > 0) {
-      response.items = response.items.filter((item) => {
-        if (!item.title) {
-          return true;
-        }
-        // Verify merchant/title or category matches at least one real transaction in context
-        const titleLower = item.title.toLowerCase();
-        const existsInGrounding = groundedTransactions.some((t) => {
-          const tTitle = (t.title || '').toLowerCase();
-          const tCat = (t.category || '').toLowerCase();
-          return tTitle.includes(titleLower) || titleLower.includes(tTitle) || titleLower.includes(tCat);
+    if (Array.isArray(response.items) && response.items.length > 0) {
+      if (groundedTransactions.length > 0) {
+        response.items = response.items.filter((item) => {
+          if (!item.title) {
+            return true;
+          }
+          // Verify merchant/title or category matches at least one real transaction in context
+          const titleLower = item.title.toLowerCase();
+          return groundedTransactions.some((t) => {
+            const tTitle = (t.title || '').toLowerCase();
+            const tCat = (t.category || '').toLowerCase();
+            return tTitle.includes(titleLower) || titleLower.includes(tTitle) || titleLower.includes(tCat);
+          });
         });
-        return existsInGrounding;
-      });
+      } else {
+        // If user has 0 transactions in Mongo, purge unverified fallback items
+        response.items = response.items.filter((item) => item.isVerified === true);
+      }
     }
 
     return response;
