@@ -201,63 +201,90 @@ export const aiService = {
   },
 
   /**
-   * Private helper to call Gemini 1.5 REST API if configured
+   * Private helper to call Gemini Generative AI REST API with model fallback
    */
   _callGeminiApi: async (apiKey, prompt, contextData) => {
-    return new Promise((resolve) => {
-      const payload = JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are FinTrack AI, an intelligent personal finance assistant. Context of user's real transactions: ${JSON.stringify(
-                  contextData
-                )}. User prompt: "${prompt}". Provide a helpful, grounded financial response with specific advice based on the context data.`,
-              },
-            ],
-          },
-        ],
-      });
+    const candidateModels = [
+      'gemini-3.5-flash',
+      'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash-lite',
+      'gemini-flash-latest',
+    ];
 
-      const req = http.request(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    const payload = JSON.stringify({
+      contents: [
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload),
-          },
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => {
-            try {
-              const data = JSON.parse(body);
-              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (text) {
-                resolve({
-                  alertTag: 'GEMINI AI INSIGHT',
-                  alertSub: 'Gemini 1.5 Flash Grounded',
-                  intro: 'AI Financial Analysis:',
-                  reply: text,
-                  items: [],
-                  badgeSuccess: 'Generated using Gemini Generative AI',
-                  footerNote: 'Grounded against user financial context',
-                });
-              } else {
-                resolve(null);
-              }
-            } catch {
-              resolve(null);
-            }
-          });
-        }
-      );
+          parts: [
+            {
+              text: `You are FinTrack AI, an intelligent personal finance assistant for mobile users.
+Context of user's real account ledger data: ${JSON.stringify(contextData)}.
+User prompt: "${prompt}".
 
-      req.on('error', () => resolve(null));
-      req.write(payload);
-      req.end();
+Provide a comprehensive, friendly, and highly actionable financial response grounded strictly in the user's real transactions and claims data above. Include specific numbers, categories, and tips. Avoid generic or filler disclaimers.`,
+            },
+          ],
+        },
+      ],
     });
+
+    for (const model of candidateModels) {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          const req = http.request(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload),
+              },
+            },
+            (res) => {
+              let body = '';
+              res.on('data', (chunk) => (body += chunk));
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  try {
+                    const data = JSON.parse(body);
+                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text && text.trim().length > 0) {
+                      resolve({
+                        alertTag: 'FINTRACK AI INSIGHT',
+                        alertSub: 'Grounded Live Analysis',
+                        intro: 'AI Financial Analysis:',
+                        reply: text.trim(),
+                        items: [],
+                        badgeSuccess: 'Powered by Gemini Generative AI',
+                        footerNote: 'Grounded in your real financial transactions',
+                      });
+                    } else {
+                      reject(new Error('Empty text candidate'));
+                    }
+                  } catch (e) {
+                    reject(e);
+                  }
+                } else {
+                  reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 150)}`));
+                }
+              });
+            }
+          );
+
+          req.on('error', (e) => reject(e));
+          req.write(payload);
+          req.end();
+        });
+
+        if (result) {
+          return result;
+        }
+      } catch (err) {
+        console.warn(`Gemini model ${model} attempt failed:`, err.message);
+      }
+    }
+
+    return null;
   },
 };
