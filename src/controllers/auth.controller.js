@@ -42,7 +42,7 @@ export const sendEmailOtp = async (req, res, next) => {
 
 export const verifyEmailOtp = async (req, res, next) => {
   try {
-    const { email, otp, name, phone } = req.body;
+    const { email, otp, name, phone, password } = req.body;
     if (!email || !otp) {
       return ApiResponse.error(res, 'Email and OTP are required', 400);
     }
@@ -64,6 +64,7 @@ export const verifyEmailOtp = async (req, res, next) => {
       email: cleanEmail,
       name,
       phone: phone ? phone.toString().trim() : undefined,
+      password,
     });
 
     return ApiResponse.success(res, 'Email verified successfully', result);
@@ -74,9 +75,9 @@ export const verifyEmailOtp = async (req, res, next) => {
 
 export const register = async (req, res, next) => {
   try {
-    const { email, name, phone } = req.body;
+    const { email, name, phone, password } = req.body;
     const cleanEmail = email || `${Date.now()}@fintrack.app`;
-    const result = await UserService.findOrCreateByEmail({ email: cleanEmail, name, phone });
+    const result = await UserService.findOrCreateByEmail({ email: cleanEmail, name, phone, password });
     return ApiResponse.success(res, 'User registered successfully', result, 201);
   } catch (error) {
     next(error);
@@ -89,6 +90,111 @@ export const login = async (req, res, next) => {
     const cleanEmail = email || (phone ? `${phone}@fintrack.app` : 'user@fintrack.app');
     const result = await UserService.findOrCreateByEmail({ email: cleanEmail, name, phone });
     return ApiResponse.success(res, 'User logged in successfully', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const loginWithPassword = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return ApiResponse.error(res, 'Email and password are required', 400);
+    }
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await UserService.validateUserPassword(cleanEmail, password);
+    if (!result.success) {
+      if (result.reason === 'NO_PASSWORD_SET') {
+        return ApiResponse.error(
+          res,
+          'No password set for this account yet. Please sign in with OTP to set your password.',
+          400,
+          { code: 'NO_PASSWORD_SET' }
+        );
+      }
+      return ApiResponse.error(res, 'Invalid email or password', 401, { code: 'INVALID_CREDENTIALS' });
+    }
+    return ApiResponse.success(res, 'User logged in successfully', {
+      user: result.user,
+      token: result.token,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const setPassword = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return ApiResponse.error(res, 'New password must be at least 6 characters', 400);
+    }
+
+    const { UserModel } = await import('../models/user.model.js');
+    const user = await UserModel.findById(userId).select('+password');
+    if (!user) {
+      return ApiResponse.error(res, 'User not found', 404);
+    }
+
+    if (user.password) {
+      if (!currentPassword) {
+        return ApiResponse.error(res, 'Current password is required to change your password', 400);
+      }
+      const isMatch = await UserService.comparePassword(currentPassword, user.password);
+      if (!isMatch) {
+        return ApiResponse.error(res, 'Current password is incorrect', 400);
+      }
+    }
+
+    user.password = await UserService.hashPassword(newPassword);
+    user.updatedAt = new Date();
+    await user.save();
+
+    return ApiResponse.success(res, 'Password saved successfully', {
+      user: UserService.formatUserPayload(user),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resetPasswordWithOtp = async (req, res, next) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return ApiResponse.error(res, 'Email, verification code, and new password are required', 400);
+    }
+    if (newPassword.length < 6) {
+      return ApiResponse.error(res, 'New password must be at least 6 characters', 400);
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanOtp = otp.toString().trim();
+
+    const record = await OtpModel.findOne({ email: cleanEmail, otp: cleanOtp });
+    if (!record) {
+      return ApiResponse.error(res, 'Invalid or expired verification code', 400);
+    }
+
+    await OtpModel.deleteOne({ _id: record._id });
+
+    const { UserModel } = await import('../models/user.model.js');
+    let user = await UserModel.findOne({ email: cleanEmail }).select('+password');
+    if (!user) {
+      return ApiResponse.error(res, 'No account found with this email', 404);
+    }
+
+    user.password = await UserService.hashPassword(newPassword);
+    user.lastLoginAt = new Date();
+    user.updatedAt = new Date();
+    await user.save();
+
+    const token = UserService.generateToken(user);
+    return ApiResponse.success(res, 'Password reset successfully. You are now logged in.', {
+      user: UserService.formatUserPayload(user),
+      token,
+    });
   } catch (error) {
     next(error);
   }
