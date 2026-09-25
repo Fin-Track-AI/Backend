@@ -10,6 +10,7 @@ import { tlsGuard } from './middlewares/tlsGuard.middleware.js';
 import { config } from './config/env.js';
 
 const app = express();
+app.set('trust proxy', true);
 
 // Security HTTP headers with TLS 1.2+ HSTS enforcement (SCRUM-151)
 app.use(
