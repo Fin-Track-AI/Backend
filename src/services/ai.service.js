@@ -53,19 +53,34 @@ export const aiService = {
     const isSavingsQuery = query.includes('saving') || query.includes('goal') || query.includes('reach');
     const isSubscriptionQuery = query.includes('subscript') || query.includes('recurring') || query.includes('netflix') || query.includes('spotify');
 
-    // 2. Try Gemini / Vertex AI LLM Generation (SCRUM-170) if GEMINI_API_KEY is configured
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    // 2. Try Groq LPU Instant LLM Generation (High Speed ~250ms) if GROQ_API_KEY is configured
+    const groqKey = process.env.GROQ_API_KEY;
+    const contextObj = {
+      totalTransactionsAmount,
+      categoryTotals,
+      transactionsCount: transactions.length,
+      claimsCount: claims.length,
+      approvedClaimsCount: approvedClaims.length,
+      pendingClaimsCount: pendingClaims.length,
+      budgets,
+    };
+
+    if (groqKey) {
       try {
-        const llmResult = await aiService._callGeminiApi(apiKey, prompt, {
-          totalTransactionsAmount,
-          categoryTotals,
-          transactionsCount: transactions.length,
-          claimsCount: claims.length,
-          approvedClaimsCount: approvedClaims.length,
-          pendingClaimsCount: pendingClaims.length,
-          budgets,
-        });
+        const groqResult = await aiService._callGroqApi(groqKey, prompt, contextObj);
+        if (groqResult) {
+          return aiGuardrailService.sanitizeEgressResponse(groqResult, transactions);
+        }
+      } catch (err) {
+        console.warn('Groq LPU API call failed, attempting Gemini fallback:', err.message);
+      }
+    }
+
+    // 3. Fallback to Gemini Generative AI if configured
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const llmResult = await aiService._callGeminiApi(geminiKey, prompt, contextObj);
         if (llmResult) {
           return aiGuardrailService.sanitizeEgressResponse(llmResult, transactions);
         }
@@ -198,6 +213,95 @@ export const aiService = {
     }
 
     return aiGuardrailService.sanitizeEgressResponse(rawResult, transactions);
+  },
+
+  /**
+   * High-Performance Ultra-Fast Groq LPU Inference Service (~250ms Response)
+   */
+  _callGroqApi: async (apiKey, prompt, contextData) => {
+    const candidateModels = [
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b',
+    ];
+
+    for (const model of candidateModels) {
+      try {
+        const bodyPayload = JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: `You are FinTrack AI, an ultra-fast intelligent personal finance assistant for mobile users in India.
+CRITICAL RESPONSE RULES:
+1. CURRENCY: Always format currency amounts using the Indian Rupee symbol (₹). NEVER use $ or USD under any circumstances.
+2. FORMATTING: Structure your response with clean Markdown headers (### Header), bold key terms (**Term:** value), bullet points (* Item), and numbered action steps.
+3. ACCURACY: Provide a friendly, actionable financial response grounded strictly in the user's real transactions and claims data provided.`,
+            },
+            {
+              role: 'user',
+              content: `Context of user's real account ledger data: ${JSON.stringify(contextData)}.\nUser question: "${prompt}".`,
+            },
+          ],
+          temperature: 0.3,
+        });
+
+        const result = await new Promise((resolve, reject) => {
+          const req = http.request(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Length': Buffer.byteLength(bodyPayload),
+              },
+            },
+            (res) => {
+              let body = '';
+              res.on('data', (chunk) => (body += chunk));
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  try {
+                    const data = JSON.parse(body);
+                    const text = data?.choices?.[0]?.message?.content;
+                    if (text && text.trim().length > 0) {
+                      resolve({
+                        alertTag: 'FINTRACK INSTANT AI',
+                        alertSub: 'Groq LPU ~250ms',
+                        intro: 'AI Financial Analysis:',
+                        reply: text.trim(),
+                        items: [],
+                        badgeSuccess: 'Powered by Groq LPU Ultra-Fast Hardware',
+                        footerNote: 'Grounded in your real financial transactions',
+                      });
+                    } else {
+                      reject(new Error('Empty completion choice'));
+                    }
+                  } catch (e) {
+                    reject(e);
+                  }
+                } else {
+                  reject(new Error(`Groq HTTP ${res.statusCode}: ${body.slice(0, 100)}`));
+                }
+              });
+            }
+          );
+
+          req.on('error', (e) => reject(e));
+          req.write(bodyPayload);
+          req.end();
+        });
+
+        if (result) {
+          return result;
+        }
+      } catch (err) {
+        console.warn(`Groq model ${model} attempt failed:`, err.message);
+      }
+    }
+
+    return null;
   },
 
   /**
