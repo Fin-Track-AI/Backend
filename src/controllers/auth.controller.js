@@ -180,7 +180,7 @@ export const resetPasswordWithOtp = async (req, res, next) => {
     await OtpModel.deleteOne({ _id: record._id });
 
     const { UserModel } = await import('../models/user.model.js');
-    let user = await UserModel.findOne({ email: cleanEmail }).select('+password');
+    const user = await UserModel.findOne({ email: cleanEmail }).select('+password');
     if (!user) {
       return ApiResponse.error(res, 'No account found with this email', 404);
     }

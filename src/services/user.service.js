@@ -39,13 +39,17 @@ export class UserService {
   }
 
   static async comparePassword(plain, hashed) {
-    if (!plain || !hashed) return false;
+    if (!plain || !hashed) {
+      return false;
+    }
     return await bcrypt.compare(plain, hashed);
   }
 
   static async setPassword(userId, newPassword) {
     const user = await UserModel.findById(userId).select('+password');
-    if (!user) return null;
+    if (!user) {
+      return null;
+    }
     user.password = await this.hashPassword(newPassword);
     user.updatedAt = new Date();
     await user.save();
