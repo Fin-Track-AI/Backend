@@ -15,6 +15,7 @@ import splitRoutes from './split.routes.js';
 import notificationRoutes from './notification.routes.js';
 import auditRoutes from './audit.routes.js';
 import retentionRoutes from './retention.routes.js';
+import categoryRoutes from './category.routes.js';
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use('/split', splitRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/audit', auditRoutes);
 router.use('/retention', retentionRoutes);
+router.use('/categories', categoryRoutes);
 
 export default router;
