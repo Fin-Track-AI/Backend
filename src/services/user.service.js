@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { UserModel } from '../models/user.model.js';
 import { config } from '../config/env.js';
 
@@ -18,6 +19,7 @@ export class UserService {
       bills: user.bills || 0,
       emi: user.emi || 0,
       isSetupComplete: user.isSetupComplete || false,
+      hasPassword: Boolean(user.password),
       createdAt: user.createdAt,
       lastLoginAt: user.lastLoginAt,
     };
@@ -31,9 +33,57 @@ export class UserService {
     );
   }
 
-  static async findOrCreateByEmail({ email, name, phone }) {
+  static async hashPassword(password) {
+    const salt = await bcrypt.genSalt(10);
+    return await bcrypt.hash(password, salt);
+  }
+
+  static async comparePassword(plain, hashed) {
+    if (!plain || !hashed) {
+      return false;
+    }
+    return await bcrypt.compare(plain, hashed);
+  }
+
+  static async setPassword(userId, newPassword) {
+    const user = await UserModel.findById(userId).select('+password');
+    if (!user) {
+      return null;
+    }
+    user.password = await this.hashPassword(newPassword);
+    user.updatedAt = new Date();
+    await user.save();
+    return this.formatUserPayload(user);
+  }
+
+  static async validateUserPassword(email, plainPassword) {
     const cleanEmail = email.toLowerCase().trim();
-    let user = await UserModel.findOne({ email: cleanEmail });
+    const user = await UserModel.findOne({ email: cleanEmail }).select('+password');
+    if (!user) {
+      return { success: false, reason: 'USER_NOT_FOUND' };
+    }
+    if (!user.password) {
+      return { success: false, reason: 'NO_PASSWORD_SET' };
+    }
+    const isMatch = await this.comparePassword(plainPassword, user.password);
+    if (!isMatch) {
+      return { success: false, reason: 'INVALID_CREDENTIALS' };
+    }
+    user.lastLoginAt = new Date();
+    user.updatedAt = new Date();
+    await user.save();
+
+    const token = this.generateToken(user);
+    return {
+      success: true,
+      user: this.formatUserPayload(user),
+      token,
+    };
+  }
+
+  static async findOrCreateByEmail({ email, name, phone, password }) {
+    const cleanEmail = email.toLowerCase().trim();
+    let user = await UserModel.findOne({ email: cleanEmail }).select('+password');
 
     if (!user) {
       const displayName = name && name.trim().length > 0
@@ -44,8 +94,11 @@ export class UserService {
         ? phone.trim()
         : `+91${Date.now().toString().slice(-10)}`;
 
+      const hashedPassword = password ? await this.hashPassword(password) : null;
+
       user = await UserModel.create({
         email: cleanEmail,
+        password: hashedPassword,
         fullName: displayName,
         name: displayName,
         phone: cleanPhone,
@@ -64,6 +117,9 @@ export class UserService {
       }
       if (phone && phone.trim().length > 0) {
         user.phone = phone.trim();
+      }
+      if (password && !user.password) {
+        user.password = await this.hashPassword(password);
       }
       await user.save();
     }
@@ -104,7 +160,7 @@ export class UserService {
   }
 
   static async getUserById(userId) {
-    const user = await UserModel.findById(userId);
+    const user = await UserModel.findById(userId).select('+password');
     return user ? this.formatUserPayload(user) : null;
   }
 

@@ -248,7 +248,7 @@ export function maskSensitiveText(text) {
   return sanitized;
 }
 
-// Keys to ignore from content regex masking (preserves hashes, IDs, timestamps, emails)
+// Keys to ignore from content regex masking (preserves hashes, IDs, timestamps, emails, dates)
 const IGNORED_KEYS = new Set([
   '_id',
   'id',
@@ -270,10 +270,17 @@ const IGNORED_KEYS = new Set([
   'mimetype',
   'status',
   'type',
+  'date',
   'createdat',
   'updatedat',
   'retentionuntil',
   'timestamp',
+  'time',
+  'month',
+  'year',
+  'category',
+  'paidvia',
+  'source',
 ]);
 
 /**
@@ -293,6 +300,10 @@ export function maskSensitiveData(data, depth = 0) {
     return data;
   }
 
+  if (data instanceof Date) {
+    return data.toISOString();
+  }
+
   if (data instanceof Error) {
     const errorObj = {
       name: data.name,
@@ -307,15 +318,29 @@ export function maskSensitiveData(data, depth = 0) {
   }
 
   if (typeof data === 'object') {
-    // If it's a Mongoose document or has toJSON
+    // If it's a Mongoose document or has custom toJSON
     const source = typeof data.toJSON === 'function' ? data.toJSON() : data;
+
+    if (source === null || source === undefined) {
+      return source;
+    }
+    if (source instanceof Date) {
+      return source.toISOString();
+    }
+    if (typeof source !== 'object') {
+      return maskSensitiveData(source, depth);
+    }
+    if (Array.isArray(source)) {
+      return source.map((item) => maskSensitiveData(item, depth + 1));
+    }
+
     const result = {};
 
     for (const [key, value] of Object.entries(source)) {
       const lowerKey = key.toLowerCase();
 
       if (IGNORED_KEYS.has(lowerKey)) {
-        result[key] = value;
+        result[key] = value instanceof Date ? value.toISOString() : value;
       } else if (SENSITIVE_ACCOUNT_KEYS.has(lowerKey)) {
         result[key] = maskBankAccount(value);
       } else if (SENSITIVE_UPI_KEYS.has(lowerKey)) {

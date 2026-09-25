@@ -4,6 +4,9 @@ import {
   verifyEmailOtp,
   register,
   login,
+  loginWithPassword,
+  setPassword,
+  resetPasswordWithOtp,
   getProfile,
   updateProfile,
   deleteAccount,
@@ -16,6 +19,9 @@ router.post('/send-otp', sendEmailOtp);
 router.post('/verify-otp', verifyEmailOtp);
 router.post('/register', register);
 router.post('/login', login);
+router.post('/login-password', loginWithPassword);
+router.post('/set-password', authenticate, setPassword);
+router.post('/reset-password-otp', resetPasswordWithOtp);
 router.get('/profile', authenticate, getProfile);
 router.put('/profile', authenticate, updateProfile);
 router.delete('/account', authenticate, deleteAccount);

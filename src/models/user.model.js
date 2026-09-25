@@ -11,6 +11,11 @@ const UserSchema = new mongoose.Schema({
   },
   fullName: { type: String, default: 'FinTrack User' },
   name: { type: String, default: 'FinTrack User' },
+  password: {
+    type: String,
+    select: false,
+    default: null,
+  },
   phone: { type: String, default: '' },
   dob: { type: Date, default: () => new Date('2000-01-01') },
   kycStatus: {
