@@ -116,3 +116,27 @@ export const getProfile = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * DELETE /api/v1/auth/account
+ * SCRUM-157: DPDP Act Right to Erasure / User-Requested Early Account Deletion
+ */
+export const deleteAccount = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return ApiResponse.error(res, 'Authentication required to delete account', 401);
+    }
+
+    const { retentionService } = await import('../services/retention.service.js');
+    const result = await retentionService.executeUserEarlyDeletion(userId, {
+      userId,
+      role: req.user?.role || 'USER',
+      ip: req.ip,
+    });
+
+    return ApiResponse.success(res, result.message, result.data);
+  } catch (error) {
+    next(error);
+  }
+};

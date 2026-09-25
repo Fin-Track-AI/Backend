@@ -4,12 +4,27 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
+import { nonTransactionalSafeguard } from './middlewares/safeguard.middleware.js';
+import { nonPrivilegedMaskingMiddleware } from './middlewares/masking.middleware.js';
+import { tlsGuard } from './middlewares/tlsGuard.middleware.js';
 import { config } from './config/env.js';
 
 const app = express();
 
-// Security HTTP headers
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// Security HTTP headers with TLS 1.2+ HSTS enforcement (SCRUM-151)
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+  })
+);
+
+// SCRUM-151: Ingress TLS 1.2+ transport security guard
+app.use(tlsGuard);
 
 // Enable CORS (supports mobile apps, localhost, and configured client domains)
 const allowedOrigins = (config.clientUrl || '*')
@@ -54,6 +69,12 @@ if (config.nodeEnv === 'development') {
 // Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// SCRUM-161: Non-Transactional Boundary Safeguard (blocks fund movement & payout attempts)
+app.use(nonTransactionalSafeguard);
+
+// SCRUM-148: Non-Privileged View & Response Data Masking
+app.use(nonPrivilegedMaskingMiddleware);
 
 // Root health check for GCP Cloud Run and load balancers
 app.get('/health', (req, res) => {

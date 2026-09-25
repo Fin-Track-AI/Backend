@@ -1,4 +1,5 @@
 import { ConsentModel } from '../models/consent.model.js';
+import { auditService } from './audit.service.js';
 
 const DEFAULT_CONSENTS = {
   upiConsent: false,
@@ -59,6 +60,23 @@ export const consentService = {
           status: newConsents[key] ? 'GRANTED' : 'REVOKED',
           timestamp,
         });
+
+        // SCRUM-164: Tamper-evident consent audit trail
+        try {
+          await auditService.logEvent({
+            eventType: 'CONSENT_UPDATE',
+            action: newConsents[key] ? 'CONSENT_GRANTED' : 'CONSENT_REVOKED',
+            actor: { userId, role: 'USER' },
+            target: { resourceType: 'CONSENT', resourceId: key },
+            metadata: {
+              consentType: key,
+              previousValue: currentRecord.consents[key],
+              newValue: newConsents[key],
+            },
+          });
+        } catch (err) {
+          console.warn('[Consent Audit Error]:', err.message);
+        }
       }
     }
 

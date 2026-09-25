@@ -1,5 +1,27 @@
+import { dlpService } from '../services/dlp.service.js';
+
+function sanitizeLogArg(arg) {
+  if (typeof arg === 'string') {
+    return dlpService.maskSensitiveText(arg);
+  }
+  return dlpService.maskSensitiveData(arg);
+}
+
 export const logger = {
-  info: (msg, ...args) => console.log(`[INFO] ${new Date().toISOString()} - ${msg}`, ...args),
-  warn: (msg, ...args) => console.warn(`[WARN] ${new Date().toISOString()} - ${msg}`, ...args),
-  error: (msg, ...args) => console.error(`[ERROR] ${new Date().toISOString()} - ${msg}`, ...args),
+  info: (msg, ...args) => {
+    const cleanMsg = typeof msg === 'string' ? dlpService.maskSensitiveText(msg) : dlpService.maskSensitiveData(msg);
+    const cleanArgs = args.map(sanitizeLogArg);
+    console.log(`[INFO] ${new Date().toISOString()} - ${cleanMsg}`, ...cleanArgs);
+  },
+  warn: (msg, ...args) => {
+    const cleanMsg = typeof msg === 'string' ? dlpService.maskSensitiveText(msg) : dlpService.maskSensitiveData(msg);
+    const cleanArgs = args.map(sanitizeLogArg);
+    console.warn(`[WARN] ${new Date().toISOString()} - ${cleanMsg}`, ...cleanArgs);
+  },
+  error: (msg, ...args) => {
+    const cleanMsg = typeof msg === 'string' ? dlpService.maskSensitiveText(msg) : dlpService.maskSensitiveData(msg);
+    const cleanArgs = args.map(sanitizeLogArg);
+    console.error(`[ERROR] ${new Date().toISOString()} - ${cleanMsg}`, ...cleanArgs);
+  },
 };
+
