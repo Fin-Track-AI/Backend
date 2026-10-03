@@ -6,10 +6,10 @@ import { uploadStatement, confirmStatement } from '../controllers/statement.cont
 
 const router = express.Router();
 
-// In-memory storage — PDFs can be large, so we stream into buffer
+// In-memory buffer size restricted to 10MB to protect against process OOM exhaustion (SEC-012)
 const pdfUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
   fileFilter: (_req, file, cb) => {
     const isPdf =
       file.mimetype === 'application/pdf' ||

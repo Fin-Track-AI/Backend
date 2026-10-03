@@ -19,10 +19,10 @@ export const uploadStatement = async (req, res, next) => {
     }
 
     const { mimetype, originalname, size } = req.file;
-    const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
     if (size > MAX_SIZE) {
-      return ApiResponse.error(res, 'File too large. Maximum allowed size is 50 MB.', 400);
+      return ApiResponse.error(res, 'File too large. Maximum allowed size is 10 MB.', 400);
     }
 
     // Accept PDF files (some clients may send octet-stream)

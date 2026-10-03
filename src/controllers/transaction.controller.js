@@ -4,8 +4,9 @@ import { ApiResponse } from '../utils/apiResponse.js';
 export const getTransactions = async (req, res, next) => {
   try {
     const userId = req.user?.id;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = parseInt(req.query.skip) || 0;
+    // SEC-016: Enforce upper bound on limit to prevent unbounded memory queries
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const skip = Math.max(parseInt(req.query.skip, 10) || 0, 0);
 
     const transactions = await TransactionModel.find({ userId })
       .sort({ date: -1 })
@@ -34,8 +35,9 @@ export const createTransaction = async (req, res, next) => {
     if (!title || !title.trim()) {
       return ApiResponse.error(res, 'Transaction title is required', 400);
     }
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      return ApiResponse.error(res, 'Valid transaction amount is required', 400);
+    const numAmount = Number(amount);
+    if (!amount || isNaN(numAmount) || !isFinite(numAmount) || numAmount <= 0) {
+      return ApiResponse.error(res, 'Valid, positive transaction amount is required', 400);
     }
     if (!type || !['income', 'expense'].includes(type)) {
       return ApiResponse.error(res, 'Transaction type must be "income" or "expense"', 400);

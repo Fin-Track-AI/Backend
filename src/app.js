@@ -27,11 +27,30 @@ app.use(
 // SCRUM-151: Ingress TLS 1.2+ transport security guard
 app.use(tlsGuard);
 
-// Enable CORS (supports mobile apps, localhost, and configured client domains)
+import rateLimit from 'express-rate-limit';
+
+// Global API Rate Limiter (200 requests per 15 minutes per IP)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: config.nodeEnv === 'test' ? 10000 : 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again after 15 minutes.',
+  },
+});
+
+app.use(globalLimiter);
+
+// Enable CORS with strict origin validation (SEC-011)
 const allowedOrigins = (config.clientUrl || '*')
   .split(',')
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
+
+const LOCALHOST_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 app.use(
   cors({
@@ -41,18 +60,13 @@ app.use(
         return callback(null, true);
       }
 
-      // Development, wildcard, or local addresses
-      if (
-        config.nodeEnv === 'development' ||
-        allowedOrigins.includes('*') ||
-        origin.includes('localhost') ||
-        origin.includes('127.0.0.1')
-      ) {
+      // Allow local development ports strictly matching regex (not arbitrary substring matches)
+      if (config.nodeEnv === 'development' || LOCALHOST_REGEX.test(origin)) {
         return callback(null, true);
       }
 
       const cleanOrigin = origin.replace(/\/$/, '');
-      if (allowedOrigins.includes(cleanOrigin)) {
+      if (allowedOrigins.includes(cleanOrigin) || (allowedOrigins.includes('*') && config.nodeEnv === 'development')) {
         return callback(null, true);
       }
 
@@ -67,9 +81,9 @@ if (config.nodeEnv === 'development') {
   app.use(morgan('dev'));
 }
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsers with safe size limits (prevent resource exhaustion)
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // SCRUM-161: Non-Transactional Boundary Safeguard (blocks fund movement & payout attempts)
 app.use(nonTransactionalSafeguard);
