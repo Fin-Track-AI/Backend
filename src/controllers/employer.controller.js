@@ -190,20 +190,46 @@ export const unlinkEmployer = async (req, res, next) => {
  */
 export const getCompanyEmployees = async (req, res, next) => {
   try {
-    const users = await UserModel.find().sort({ createdAt: -1 }).lean();
-    const claims = await ClaimModel.find().lean();
-    const linkedEmployers = await EmployerModel.find().lean();
+    const { companyId, employerName, companyName } = req.query;
+    const targetCompId = companyId || req.headers['x-company-id'];
+    const targetCompName = employerName || companyName;
+
+    const employerFilter = {};
+    if (targetCompId && targetCompName) {
+      employerFilter.$or = [
+        { employerId: targetCompId },
+        { employerName: new RegExp(`^${targetCompName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i') },
+      ];
+    } else if (targetCompId) {
+      employerFilter.employerId = targetCompId;
+    } else if (targetCompName) {
+      employerFilter.employerName = new RegExp(`^${targetCompName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+    }
+
+    const linkedEmployers = await EmployerModel.find(employerFilter).lean();
 
     const employerMap = new Map();
     linkedEmployers.forEach((le) => {
       employerMap.set(le.userId, le);
     });
 
-    // Only include users who have actually linked to this employer
-    const enrolledUsers = users.filter((u) => employerMap.has(u._id.toString()));
+    const enrolledUserIds = Array.from(employerMap.keys());
+    const users = await UserModel.find({
+      $or: [
+        { _id: { $in: enrolledUserIds.filter((id) => id && id.length === 24) } },
+        { email: { $in: enrolledUserIds } },
+      ],
+    }).sort({ createdAt: -1 }).lean();
 
-    const employees = enrolledUsers.map((user) => {
-      const empLink = employerMap.get(user._id.toString());
+    const claims = await ClaimModel.find({
+      $or: [
+        { userId: { $in: enrolledUserIds } },
+        ...(targetCompId ? [{ employerId: targetCompId }] : []),
+      ],
+    }).lean();
+
+    const employees = users.map((user) => {
+      const empLink = employerMap.get(user._id.toString()) || employerMap.get(user.email);
       const userClaims = claims.filter(
         (c) => c.userId === user._id.toString() || c.userId === user.email
       );
@@ -224,6 +250,8 @@ export const getCompanyEmployees = async (req, res, next) => {
         monthlyAllowance: empLink?.monthlyAllowance || 25000,
         totalReimbursed,
         claimsCount: userClaims.length,
+        employerId: empLink?.employerId || targetCompId,
+        employerName: empLink?.employerName || targetCompName,
         avatar:
           name
             .split(' ')

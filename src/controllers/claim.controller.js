@@ -27,7 +27,23 @@ export const submitClaim = async (req, res, next) => {
 
 export const getAllClaims = async (req, res, next) => {
   try {
-    const claims = await claimService.getAllClaims();
+    const { companyId, employerName, companyName } = req.query;
+    const targetCompId = companyId || req.headers['x-company-id'];
+    const targetCompName = employerName || companyName;
+
+    const filter = {};
+    if (targetCompId && targetCompName) {
+      filter.$or = [
+        { employerId: targetCompId },
+        { employerName: new RegExp(`^${targetCompName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i') },
+      ];
+    } else if (targetCompId) {
+      filter.employerId = targetCompId;
+    } else if (targetCompName) {
+      filter.employerName = new RegExp(`^${targetCompName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
+    }
+
+    const claims = await claimService.getAllClaims(filter);
     return ApiResponse.success(res, 'Claims retrieved successfully', {
       claims,
       total: claims.length,
