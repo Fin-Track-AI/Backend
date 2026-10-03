@@ -32,6 +32,17 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  role: {
+    type: String,
+    enum: ['USER', 'EMPLOYEE', 'EMPLOYER_ADMIN', 'FINANCE_CONTROLLER', 'SECURITY_ADMIN', 'SYSTEM'],
+    default: 'USER',
+    index: true,
+  },
+  employerId: {
+    type: String,
+    default: null,
+    index: true,
+  },
   salary: { type: Number, default: 0 },
   rent: { type: Number, default: 0 },
   bills: { type: Number, default: 0 },

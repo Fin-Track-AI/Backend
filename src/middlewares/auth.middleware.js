@@ -1,90 +1,87 @@
+import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import { ApiResponse } from '../utils/apiResponse.js';
 import { config } from '../config/env.js';
 import { UserModel } from '../models/user.model.js';
 
+/**
+ * Authentication Middleware
+ * Strictly verifies JWT tokens against the server secret key with HS256 algorithm pinning.
+ * Rejects unauthenticated requests and removes all hardcoded backdoor bypasses.
+ */
 export const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    if (config.nodeEnv !== 'production') {
-      req.user = { id: 'usr_me', phone: '' };
-      return next();
-    }
     return ApiResponse.error(res, 'Unauthorized access: No token provided', 401);
   }
 
   const token = authHeader.split(' ')[1];
-  if (!token) {
-    if (config.nodeEnv !== 'production') {
-      req.user = { id: 'usr_me', phone: '' };
-      return next();
-    }
-    return ApiResponse.error(res, 'Unauthorized access: Invalid token', 401);
+  if (!token || !token.trim()) {
+    return ApiResponse.error(res, 'Unauthorized access: Invalid token format', 401);
   }
 
-  // Test / demo bypass
-  if (
-    token === 'mock_token_123' ||
-    token.startsWith('demo_') ||
-    token.startsWith('guest_') ||
-    (config.nodeEnv !== 'production' && token === 'usr_me')
-  ) {
-    req.user = { id: token.startsWith('demo_') ? token : 'user_123', phone: 'test@fintrack.com' };
-    return next();
-  }
-
-  // Verify real JWT (with fallback to alternate environment secrets if rotated)
   try {
-    let decoded;
-    try {
-      decoded = jwt.verify(token, config.jwtSecret);
-    } catch (e) {
-      if (e.name === 'TokenExpiredError') {
-        throw e;
-      }
-      const fallbackSecrets = [
-        'fintrack_super_secret_jwt_key_2026',
-        'fintrack_prod_jwt_secret_key_2026_change_this',
-        'your_jwt_secret_key_change_in_production',
-      ];
-      for (const secret of fallbackSecrets) {
-        try {
-          decoded = jwt.verify(token, secret);
-          break;
-        } catch {
-          // Continue to next fallback secret
-        }
-      }
-      if (!decoded) {
-        throw e;
-      }
-    }
+    const decoded = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
+
     req.user = {
       id: decoded.userId || decoded.id,
       phone: decoded.phone || '',
-      email: decoded.email,
+      email: decoded.email || '',
+      role: decoded.role || 'USER',
+      employerId: decoded.employerId || null,
     };
 
-    if (!req.user.phone && req.user.id && req.user.id !== 'usr_me') {
+    if (req.user.id && mongoose.isValidObjectId(req.user.id)) {
       try {
-        const dbUser = await UserModel.findById(req.user.id).select('phone');
-        if (dbUser && dbUser.phone) {
-          req.user.phone = dbUser.phone;
+        const dbUser = await UserModel.findById(req.user.id).select('phone role employerId');
+        if (dbUser) {
+          if (dbUser.phone) {
+            req.user.phone = dbUser.phone;
+          }
+          if (dbUser.role) {
+            req.user.role = dbUser.role;
+          }
+          if (dbUser.employerId) {
+            req.user.employerId = dbUser.employerId;
+          }
         }
       } catch (err) {
-        console.warn('User phone resolution warning:', err.message);
+        console.warn('[Auth Middleware] User resolution warning:', err.message);
       }
     }
+
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return ApiResponse.error(res, 'Session expired. Please log in again.', 401);
     }
-    if (config.nodeEnv !== 'production') {
-      req.user = { id: token, phone: '' };
-      return next();
-    }
     return ApiResponse.error(res, 'Unauthorized access: Invalid or tampered token.', 401);
   }
 };
 
+/**
+ * Role-Based Access Control (RBAC) Middleware Factory
+ * Ensures authenticated user possesses at least one of the allowed roles.
+ *
+ * @param {...string} allowedRoles - E.g. 'EMPLOYER_ADMIN', 'FINANCE_CONTROLLER', 'SECURITY_ADMIN'
+ */
+export const requireRole = (...allowedRoles) => {
+  const flatRoles = allowedRoles.flat();
+  return (req, res, next) => {
+    if (!req.user) {
+      return ApiResponse.error(res, 'Authentication required', 401);
+    }
+
+    const currentRole = req.user.role || 'USER';
+    if (!flatRoles.includes(currentRole)) {
+      return ApiResponse.error(
+        res,
+        `Access denied: Action requires one of [${flatRoles.join(', ')}] role privileges.`,
+        403,
+        { requiredRoles: flatRoles, currentRole }
+      );
+    }
+
+    next();
+  };
+};

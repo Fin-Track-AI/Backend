@@ -1,21 +1,24 @@
+import crypto from 'crypto';
 import { ApiResponse } from '../utils/apiResponse.js';
 import { UserService } from '../services/user.service.js';
 import { EmailService } from '../services/email.service.js';
 import { OtpModel } from '../models/otp.model.js';
 
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
 export const sendEmailOtp = async (req, res, next) => {
   try {
     const { email } = req.body;
-    if (!email || !email.includes('@')) {
+    if (!email || !EMAIL_REGEX.test(email.trim())) {
       return ApiResponse.error(res, 'A valid email address is required', 400);
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
-    // Generate secure random 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // SCRUM-SEC: Cryptographically secure random 6-digit OTP (CSPRNG)
+    const otp = crypto.randomInt(100000, 1000000).toString();
 
-    // Remove any older OTP for this email
+    // Remove older OTPs for this email
     await OtpModel.deleteMany({ email: cleanEmail });
 
     // Store new OTP with 5m TTL
@@ -56,7 +59,7 @@ export const verifyEmailOtp = async (req, res, next) => {
       return ApiResponse.error(res, 'Invalid or expired verification code', 400);
     }
 
-    // Delete used OTP
+    // Delete used OTP immediately to prevent reuse
     await OtpModel.deleteOne({ _id: record._id });
 
     // Find or create user
@@ -76,7 +79,10 @@ export const verifyEmailOtp = async (req, res, next) => {
 export const register = async (req, res, next) => {
   try {
     const { email, name, phone, password } = req.body;
-    const cleanEmail = email || `${Date.now()}@fintrack.app`;
+    if (!email || !EMAIL_REGEX.test(email.trim())) {
+      return ApiResponse.error(res, 'A valid email address is required', 400);
+    }
+    const cleanEmail = email.toLowerCase().trim();
     const result = await UserService.findOrCreateByEmail({ email: cleanEmail, name, phone, password });
     return ApiResponse.success(res, 'User registered successfully', result, 201);
   } catch (error) {
@@ -86,10 +92,25 @@ export const register = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
-    const { email, name, phone } = req.body;
-    const cleanEmail = email || (phone ? `${phone}@fintrack.app` : 'user@fintrack.app');
-    const result = await UserService.findOrCreateByEmail({ email: cleanEmail, name, phone });
-    return ApiResponse.success(res, 'User logged in successfully', result);
+    const { email, password } = req.body;
+    if (!email) {
+      return ApiResponse.error(res, 'Email address is required', 400);
+    }
+    const cleanEmail = email.toLowerCase().trim();
+
+    // If password supplied, forward to verified password login
+    if (password) {
+      req.body.email = cleanEmail;
+      return loginWithPassword(req, res, next);
+    }
+
+    // Reject passwordless logins to prevent account takeover (SEC-003)
+    return ApiResponse.error(
+      res,
+      'Password or verified OTP required to sign in. Please supply your password or sign in with OTP.',
+      401,
+      { code: 'AUTH_CREDENTIALS_REQUIRED' }
+    );
   } catch (error) {
     next(error);
   }

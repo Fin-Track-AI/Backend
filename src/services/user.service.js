@@ -20,6 +20,8 @@ export class UserService {
       emi: user.emi || 0,
       isSetupComplete: user.isSetupComplete || false,
       hasPassword: Boolean(user.password),
+      role: user.role || 'USER',
+      employerId: user.employerId || null,
       createdAt: user.createdAt,
       lastLoginAt: user.lastLoginAt,
     };
@@ -27,9 +29,15 @@ export class UserService {
 
   static generateToken(user) {
     return jwt.sign(
-      { userId: user._id.toString(), email: user.email, phone: user.phone || '' },
+      {
+        userId: user._id.toString(),
+        email: user.email,
+        phone: user.phone || '',
+        role: user.role || 'USER',
+        employerId: user.employerId || null,
+      },
       config.jwtSecret,
-      { expiresIn: config.jwtExpiresIn }
+      { expiresIn: config.jwtExpiresIn, algorithm: 'HS256' }
     );
   }
 
@@ -81,7 +89,7 @@ export class UserService {
     };
   }
 
-  static async findOrCreateByEmail({ email, name, phone, password }) {
+  static async findOrCreateByEmail({ email, name, phone, password, role, employerId }) {
     const cleanEmail = email.toLowerCase().trim();
     let user = await UserModel.findOne({ email: cleanEmail }).select('+password');
 
@@ -102,6 +110,8 @@ export class UserService {
         fullName: displayName,
         name: displayName,
         phone: cleanPhone,
+        role: role || 'USER',
+        employerId: employerId || null,
         dob: new Date('2000-01-01'),
         kycStatus: 'PENDING',
         consentStatus: 'NONE',
@@ -111,15 +121,14 @@ export class UserService {
     } else {
       user.lastLoginAt = new Date();
       user.updatedAt = new Date();
-      if (name && name.trim().length > 0) {
-        user.name = name.trim();
-        user.fullName = name.trim();
-      }
-      if (phone && phone.trim().length > 0) {
-        user.phone = phone.trim();
-      }
       if (password && !user.password) {
         user.password = await this.hashPassword(password);
+      }
+      if (role && ['EMPLOYER_ADMIN', 'FINANCE_CONTROLLER'].includes(role) && user.role === 'USER') {
+        user.role = role;
+      }
+      if (employerId && !user.employerId) {
+        user.employerId = employerId;
       }
       await user.save();
     }
