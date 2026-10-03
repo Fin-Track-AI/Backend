@@ -10,8 +10,9 @@ import { consentService } from '../src/services/consent.service.js';
  * Originally written with node:test runner — migrated to Jest to align with
  * the project's unified test setup (Jest + Supertest, see tests/health.test.js).
  */
+import { getAuthHeader } from './setup.js';
 
-const MOCK_AUTH_HEADER = 'Bearer mock_token_123';
+const MOCK_AUTH_HEADER = getAuthHeader('USER', 'user_123');
 
 beforeEach(async () => {
   await employerService._clearStore();

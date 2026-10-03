@@ -8,8 +8,10 @@ import { TransactionModel } from '../src/models/transaction.model.js';
  * BR-09: Anonymized Peer Benchmarking
  */
 
-const MOCK_AUTH_HEADER = 'Bearer mock_token_123';
+import { getAuthHeader } from './setup.js';
+
 const TEST_USER_ID = 'user_123';
+const MOCK_AUTH_HEADER = getAuthHeader('USER', TEST_USER_ID);
 
 beforeEach(async () => {
   await BudgetModel.deleteMany({});

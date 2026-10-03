@@ -4,9 +4,10 @@ import { SplitGroup } from '../src/models/splitGroup.model.js';
 import { GroupExpense } from '../src/models/groupExpense.model.js';
 import { Settlement } from '../src/models/settlement.model.js';
 import { UserModel } from '../src/models/user.model.js';
+import { getAuthHeader } from './setup.js';
 
 describe('Split Expenses API (BR-16 to BR-19)', () => {
-  const authHeader = 'Bearer mock_token_123';
+  const authHeader = getAuthHeader('USER', 'user_123');
   let createdGroupId;
 
   beforeEach(async () => {

@@ -14,6 +14,7 @@ import { storageService } from '../src/services/storage.service.js';
 import { ClaimModel } from '../src/models/claim.model.js';
 import { BillModel } from '../src/models/bill.model.js';
 import { HSTS_HEADER_VALUE } from '../src/middlewares/tlsGuard.middleware.js';
+import { getAuthHeader } from './setup.js';
 
 describe('SCRUM-150: Encryption in Transit & At Rest (TLS 1.2+ / AES-256)', () => {
   // -------------------------------------------------------------
@@ -175,7 +176,9 @@ describe('SCRUM-150: Encryption in Transit & At Rest (TLS 1.2+ / AES-256)', () =
         billStorageKey: saved.storageKey,
       });
 
-      const res = await request(app).get(`/api/v1/claims/${claim.claimId}/receipt-image`);
+      const res = await request(app)
+        .get(`/api/v1/claims/${claim.claimId}/receipt-image`)
+        .set('Authorization', getAuthHeader('USER', 'user_crypto_claim'));
       expect(res.status).toBe(200);
       const receivedContent = Buffer.isBuffer(res.body) ? res.body.toString('utf8') : (res.text || '');
       expect(receivedContent).toBe(sampleText);

@@ -21,3 +21,18 @@ afterAll(async () => {
   await mongoose.connection.close();
   await mongod.stop();
 }, 10000);
+
+import jwt from 'jsonwebtoken';
+import { config } from '../src/config/env.js';
+
+export const getAuthToken = (role = 'USER', userId = '507f1f77bcf86cd799439011', email = 'test@fintrack.com', employerId = null) => {
+  return jwt.sign(
+    { userId, id: userId, role, email, employerId },
+    config.jwtSecret,
+    { algorithm: 'HS256', expiresIn: '1h' }
+  );
+};
+
+export const getAuthHeader = (role = 'USER', userId = '507f1f77bcf86cd799439011', email = 'test@fintrack.com', employerId = null) => {
+  return `Bearer ${getAuthToken(role, userId, email, employerId)}`;
+};

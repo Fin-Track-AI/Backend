@@ -12,6 +12,9 @@ import { EmployerModel } from '../src/models/employer.model.js';
 import { claimService } from '../src/services/claim.service.js';
 import { employerService } from '../src/services/employer.service.js';
 import { retentionService } from '../src/services/retention.service.js';
+import { getAuthHeader } from './setup.js';
+
+const adminAuthHeader = getAuthHeader('SECURITY_ADMIN', 'admin_ret_1');
 
 beforeEach(async () => {
   await ClaimModel.deleteMany({});
@@ -171,12 +174,17 @@ describe('SCRUM-154: Data Retention & Purge Policy', () => {
     });
 
     test('5. POST /api/v1/retention/purge-job and GET /api/v1/retention/metrics endpoints work as expected', async () => {
-      const purgeRes = await request(app).post('/api/v1/retention/purge-job').send({ dryRun: true });
+      const purgeRes = await request(app)
+        .post('/api/v1/retention/purge-job')
+        .set('Authorization', adminAuthHeader)
+        .send({ dryRun: true });
       expect(purgeRes.status).toBe(200);
       expect(purgeRes.body.success).toBe(true);
       expect(purgeRes.body.data.dryRun).toBe(true);
 
-      const metricsRes = await request(app).get('/api/v1/retention/metrics');
+      const metricsRes = await request(app)
+        .get('/api/v1/retention/metrics')
+        .set('Authorization', adminAuthHeader);
       expect(metricsRes.status).toBe(200);
       expect(metricsRes.body.success).toBe(true);
       expect(metricsRes.body.data.statutoryStandard).toBe('5_YEARS_INCOME_TAX_ACT_SEC_44AA');

@@ -10,6 +10,7 @@ import { claimService } from '../src/services/claim.service.js';
 import { employerService } from '../src/services/employer.service.js';
 import { consentService } from '../src/services/consent.service.js';
 import { FORBIDDEN_TRANSACTIONAL_KEYS, findForbiddenKey } from '../src/middlewares/safeguard.middleware.js';
+import { getAuthHeader } from './setup.js';
 
 beforeEach(async () => {
   await AuditLogModel.deleteMany({});
@@ -84,7 +85,9 @@ describe('SCRUM-159: Non-Transactional Boundary Safeguards', () => {
     test('3. UPI Route Audit: /api/v1/upi only returns informational read ledger data without payout execution', async () => {
       await consentService.updateConsents('usr_me', { upiConsent: true });
 
-      const res = await request(app).get('/api/v1/upi/transactions');
+      const res = await request(app)
+        .get('/api/v1/upi/transactions')
+        .set('Authorization', getAuthHeader('USER', 'usr_me'));
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
 
@@ -145,6 +148,7 @@ describe('SCRUM-159: Non-Transactional Boundary Safeguards', () => {
     test('7. Normal expense tracking requests without fund-movement keys pass without hindrance', async () => {
       const res = await request(app)
         .post('/api/v1/transactions')
+        .set('Authorization', getAuthHeader('USER', 'usr_me'))
         .send({
           title: 'Starbucks Coffee',
           amount: 350,

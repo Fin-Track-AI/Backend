@@ -8,6 +8,9 @@ import { auditService, GENESIS_HASH } from '../src/services/audit.service.js';
 import { claimService } from '../src/services/claim.service.js';
 import { employerService } from '../src/services/employer.service.js';
 import { sanitizeAuditData } from '../src/utils/auditSanitizer.js';
+import { getAuthHeader } from './setup.js';
+
+const adminAuthHeader = getAuthHeader('SECURITY_ADMIN', 'admin_1');
 
 beforeEach(async () => {
   await AuditLogModel.deleteMany({});
@@ -117,6 +120,7 @@ describe('SCRUM-163: Audit Logging System', () => {
     test('4. Accessing claims list triggers a DATA_ACCESS audit log with actor metadata', async () => {
       const res = await request(app)
         .get('/api/v1/claims')
+        .set('Authorization', adminAuthHeader)
         .set('User-Agent', 'FinTrack-Test-Agent/1.0')
         .set('X-Forwarded-For', '203.0.113.195');
 
@@ -139,6 +143,7 @@ describe('SCRUM-163: Audit Logging System', () => {
     test('5. Accessing receipt images triggers RECEIPT_IMAGE_ACCESSED audit record', async () => {
       await request(app)
         .get('/api/v1/claims/claim_sample_123/receipt-image')
+        .set('Authorization', adminAuthHeader)
         .set('User-Agent', 'Mobile-Flutter/3.0')
         .set('X-Forwarded-For', '198.51.100.42');
 
@@ -256,7 +261,9 @@ describe('SCRUM-163: Audit Logging System', () => {
       });
 
       // Pristine endpoint call
-      const cleanRes = await request(app).get('/api/v1/audit/verify');
+      const cleanRes = await request(app)
+        .get('/api/v1/audit/verify')
+        .set('Authorization', adminAuthHeader);
       expect(cleanRes.status).toBe(200);
       expect(cleanRes.body.success).toBe(true);
       expect(cleanRes.body.data.isValid).toBe(true);
@@ -267,7 +274,9 @@ describe('SCRUM-163: Audit Logging System', () => {
         { $set: { hash: 'tampered_invalid_hash_string_here' } }
       );
 
-      const tamperedRes = await request(app).get('/api/v1/audit/verify');
+      const tamperedRes = await request(app)
+        .get('/api/v1/audit/verify')
+        .set('Authorization', adminAuthHeader);
       expect(tamperedRes.status).toBe(409);
       expect(tamperedRes.body.success).toBe(false);
       expect(tamperedRes.body.errors.isValid).toBe(false);
