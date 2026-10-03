@@ -177,11 +177,31 @@ export class SplitService {
     return this.attachExpensesToGroups(groups);
   }
 
-  async getGroupById(groupId) {
+  async getGroupById(groupId, userId = null, userPhone = '') {
     const group = await SplitGroup.findById(groupId);
     if (!group) {
-      throw new Error('Group not found');
+      const err = new Error('Group not found');
+      err.statusCode = 404;
+      throw err;
     }
+
+    if (userId) {
+      const cleanPhone = userPhone ? userPhone.replace(/\D/g, '').slice(-10) : '';
+      const isMember =
+        group.createdBy === userId ||
+        group.members.some(
+          (m) =>
+            m.memberId === userId ||
+            (cleanPhone && m.phone && m.phone.replace(/\D/g, '').slice(-10) === cleanPhone)
+        );
+
+      if (!isMember) {
+        const err = new Error('Access denied: You are not a member of this split group.');
+        err.statusCode = 403;
+        throw err;
+      }
+    }
+
     return this.attachExpensesToGroup(group);
   }
 
@@ -216,10 +236,19 @@ export class SplitService {
     };
   }
 
-  async deleteGroup(groupId, _userId) {
+  async deleteGroup(groupId, userId = null) {
     const group = await SplitGroup.findById(groupId);
     if (!group) {
-      throw new Error('Group not found');
+      const err = new Error('Group not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // SCRUM-SEC: Enforce group creator authorization (SEC-007)
+    if (userId && group.createdBy && group.createdBy !== userId) {
+      const err = new Error('Access denied: Only the group creator can delete this split group.');
+      err.statusCode = 403;
+      throw err;
     }
 
     // Cascade delete associated expenses and settlements

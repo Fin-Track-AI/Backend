@@ -430,7 +430,7 @@ export const claimService = {
   /**
    * Get file path and metadata for a claim's receipt image.
    */
-  getClaimReceiptImageFile: async (claimId) => {
+  getClaimReceiptImageFile: async (claimId, requestingUser = null) => {
     const claim = await ClaimModel.findOne({
       $or: [{ claimId }, { _id: claimId.length === 24 ? claimId : null }],
     }).lean();
@@ -439,6 +439,17 @@ export const claimService = {
       const error = new Error(`Claim '${claimId}' not found.`);
       error.statusCode = 404;
       throw error;
+    }
+
+    // Verify requesting user is either the claim owner or an authorized administrator
+    if (requestingUser) {
+      const isOwner = claim.userId === requestingUser.id;
+      const isAdmin = ['EMPLOYER_ADMIN', 'FINANCE_CONTROLLER', 'SECURITY_ADMIN', 'SYSTEM'].includes(requestingUser.role);
+      if (!isOwner && !isAdmin) {
+        const error = new Error('Access denied: You do not have permission to view this receipt.');
+        error.statusCode = 403;
+        throw error;
+      }
     }
 
     let filePath = null;
@@ -455,9 +466,10 @@ export const claimService = {
       }
     }
 
-    // 2. Fallback: storageKey or userId/billStorageKey
-    if (!filePath && claim.billStorageKey) {
-      const candidate = path.join(process.cwd(), 'uploads', 'bills', claim.billStorageKey);
+    // 2. Fallback: storageKey or userId/billStorageKey (sanitized against path traversal)
+    if (!filePath && claim.billStorageKey && claim.billStorageKey !== 'receipt_stored') {
+      const sanitizedKey = path.normalize(claim.billStorageKey).replace(/^(\.\.(\/|\\|$))+/, '');
+      const candidate = path.join(process.cwd(), 'uploads', 'bills', sanitizedKey);
       if (fs.existsSync(candidate)) {
         filePath = candidate;
         originalName = path.basename(candidate);

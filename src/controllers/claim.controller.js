@@ -141,17 +141,17 @@ export const deleteClaim = async (req, res, next) => {
 export const getClaimReceiptImage = async (req, res, next) => {
   try {
     const { claimId } = req.params;
-    const { filePath, mimeType, originalName } = await claimService.getClaimReceiptImageFile(claimId);
+    const { filePath, mimeType, originalName } = await claimService.getClaimReceiptImageFile(claimId, req.user);
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
 
     const stream = storageService.getFileStream(filePath);
     stream.pipe(res);
   } catch (error) {
-    if (error.statusCode === 404) {
-      return ApiResponse.error(res, error.message, 404);
+    if (error.statusCode) {
+      return ApiResponse.error(res, error.message, error.statusCode);
     }
     next(error);
   }

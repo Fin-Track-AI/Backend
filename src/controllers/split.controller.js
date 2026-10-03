@@ -41,9 +41,14 @@ export const getGroups = async (req, res, next) => {
 export const getGroupById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const group = await splitService.getGroupById(id);
+    const userId = req.user?.id;
+    const userPhone = req.user?.phone || '';
+    const group = await splitService.getGroupById(id, userId, userPhone);
     return ApiResponse.success(res, 'Group details fetched successfully', group);
   } catch (error) {
+    if (error.statusCode) {
+      return ApiResponse.error(res, error.message, error.statusCode);
+    }
     next(error);
   }
 };
@@ -51,10 +56,13 @@ export const getGroupById = async (req, res, next) => {
 export const deleteGroup = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id || 'usr_me';
+    const userId = req.user?.id;
     const result = await splitService.deleteGroup(id, userId);
     return ApiResponse.success(res, 'Group deleted successfully', result);
   } catch (error) {
+    if (error.statusCode) {
+      return ApiResponse.error(res, error.message, error.statusCode);
+    }
     return ApiResponse.error(res, error.message, error.message === 'Group not found' ? 404 : 400);
   }
 };

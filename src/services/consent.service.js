@@ -160,7 +160,7 @@ export const consentService = {
    * Helper to clear store for testing — deletes test user docs.
    */
   _clearStore: async () => {
-    await ConsentModel.deleteMany({ userId: 'user_123' });
+    await ConsentModel.deleteMany({});
   },
 };
 

@@ -38,13 +38,14 @@ export const getNotifications = async (req, res, next) => {
 export const markAsRead = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const notification = await Notification.findByIdAndUpdate(
-      id,
+    const userId = req.user?.id;
+    const notification = await Notification.findOneAndUpdate(
+      { _id: id, userId },
       { isRead: true },
       { new: true }
     );
     if (!notification) {
-      return ApiResponse.error(res, 'Notification not found', 404);
+      return ApiResponse.error(res, 'Notification not found or access denied', 404);
     }
     return ApiResponse.success(res, 'Notification marked as read', notification);
   } catch (error) {
@@ -54,7 +55,7 @@ export const markAsRead = async (req, res, next) => {
 
 export const markAllAsRead = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 'usr_me';
+    const userId = req.user?.id;
     await Notification.updateMany({ userId, isRead: false }, { isRead: true });
     return ApiResponse.success(res, 'All notifications marked as read');
   } catch (error) {
@@ -66,14 +67,15 @@ export const updateActionStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { action } = req.body; // 'ACCEPTED' or 'DECLINED'
+    const userId = req.user?.id;
 
-    const notification = await Notification.findByIdAndUpdate(
-      id,
+    const notification = await Notification.findOneAndUpdate(
+      { _id: id, userId },
       { actionStatus: action, isRead: true },
       { new: true }
     );
     if (!notification) {
-      return ApiResponse.error(res, 'Notification not found', 404);
+      return ApiResponse.error(res, 'Notification not found or access denied', 404);
     }
     return ApiResponse.success(res, 'Notification action updated', notification);
   } catch (error) {
@@ -84,7 +86,11 @@ export const updateActionStatus = async (req, res, next) => {
 export const createNotification = async (req, res, next) => {
   try {
     const { userId, title, body, type, data } = req.body;
-    const targetUserId = userId || req.user?.id || 'usr_me';
+    const requesterId = req.user?.id;
+    const isAdmin = ['SECURITY_ADMIN', 'SYSTEM', 'EMPLOYER_ADMIN'].includes(req.user?.role);
+    
+    // Only privileged roles can dispatch notifications to arbitrary users; otherwise target is self
+    const targetUserId = isAdmin && userId ? userId : requesterId;
 
     if (!title || !body) {
       return ApiResponse.error(res, 'Title and body are required', 400);
@@ -92,8 +98,8 @@ export const createNotification = async (req, res, next) => {
 
     const notification = await Notification.create({
       userId: targetUserId,
-      title,
-      body,
+      title: String(title).slice(0, 150),
+      body: String(body).slice(0, 500),
       type: type || 'system',
       data: data || {},
     });

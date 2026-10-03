@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { EmployerModel } from '../models/employer.model.js';
 import { InviteCodeModel } from '../models/inviteCode.model.js';
 
@@ -28,9 +29,9 @@ export const employerService = {
       .slice(0, 3)
       .toUpperCase() || 'ORG';
 
-    // Generate random 4 digits + 2 chars e.g. TC-8492-K9
-    const randNum = Math.floor(1000 + Math.random() * 9000);
-    const randChars = Math.random().toString(36).substring(2, 4).toUpperCase();
+    // Generate random 4 digits + 2 chars using CSPRNG e.g. TC-8492-K9
+    const randNum = crypto.randomInt(1000, 10000);
+    const randChars = crypto.randomBytes(2).toString('hex').toUpperCase().slice(0, 2);
     const code = `${prefix}-${randNum}-${randChars}`;
 
     const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);

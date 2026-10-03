@@ -10,9 +10,29 @@ export const retentionController = {
     try {
       const { dryRun, targetDate } = req.body || {};
 
+      // Security Guard: Prevent arbitrary future date purging that could wipe active records (SEC-006)
+      const now = new Date();
+      let evaluatedDate = now;
+
+      if (targetDate) {
+        const parsed = new Date(targetDate);
+        if (isNaN(parsed.getTime())) {
+          return ApiResponse.error(res, 'Invalid targetDate timestamp format', 400);
+        }
+        if (parsed > now) {
+          return ApiResponse.error(
+            res,
+            'Security violation: targetDate cannot be set in the future. Active records under retention cannot be prematurely purged.',
+            400,
+            { code: 'FUTURE_PURGE_FORBIDDEN' }
+          );
+        }
+        evaluatedDate = parsed;
+      }
+
       const result = await retentionService.runPurgeJob({
         dryRun: Boolean(dryRun),
-        targetDate: targetDate ? new Date(targetDate) : new Date(),
+        targetDate: evaluatedDate,
       });
 
       return ApiResponse.success(res, 'Purge job executed successfully.', result);

@@ -1,11 +1,22 @@
 import { Router } from 'express';
 import { auditController } from '../controllers/audit.controller.js';
-import { authenticate } from '../middlewares/auth.middleware.js';
+import { authenticate, requireRole } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
-// In development or testing, authenticate middleware allows token bypasses or admin access
-router.get('/verify', authenticate, auditController.verifyChain);
-router.get('/logs', authenticate, auditController.getLogs);
+router.use(authenticate);
+
+// Restrict access to cryptographic audit verification and raw audit logs to security administration
+router.get(
+  '/verify',
+  requireRole(['SECURITY_ADMIN', 'SYSTEM']),
+  auditController.verifyChain
+);
+
+router.get(
+  '/logs',
+  requireRole(['SECURITY_ADMIN', 'SYSTEM']),
+  auditController.getLogs
+);
 
 export default router;
